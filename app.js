@@ -861,24 +861,36 @@ const fmt = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString();
 
 const $ = id => document.getElementById(id);
 
-// On a phone the module page is below the sidebar, so jump down to it after choosing a module
+// Phones and small tablets show either the list or the open module, not both
 const onPhone = () => matchMedia("(max-width: 800px)").matches;
-const showModuleOnPhone = () => {
-  if (onPhone() && currentModule()) $("main").scrollIntoView({ behavior: "smooth", block: "start" });
-};
+
+// Opens a module and closes every folder except its own. openModule(null) goes back to the
+// clean list with all folders closed.
+function openModule(id) {
+  state.selectedId = id;
+  const mod = currentModule();
+  state.folders.forEach(f => (f.collapsed = !mod || f.id !== mod.folderId));
+  if (state.modules.length) $("addPanel").hidden = true;
+  saveState();
+  render();
+  if (onPhone()) window.scrollTo({ top: 0 });
+}
+const showModuleOnPhone = () => { if (state.selectedId) openModule(state.selectedId); };
 
 function render() {
   renderModuleList();
-  renderKeyDates();
   renderAiState();
   const mod = currentModule();
+  $("layout").classList.toggle("module-open", !!mod);
+  $("layout").classList.toggle("no-modules", !state.modules.length);
+  if (!state.modules.length) $("addPanel").hidden = false;
   $("welcome").hidden = !!mod;
   $("moduleView").hidden = !mod;
   if (!mod) return;
 
   $("moduleName").value = mod.name;
   $("moduleSource").textContent = mod.fileName
-    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? ` · read by AI 🤖${mod.aiInput === "pdf" ? " (from the PDF)" : ""}` : ""}`
+    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? ` · read by AI${mod.aiInput === "pdf" ? " from the PDF" : ""}` : ""}`
     : "Added manually";
   fillFolderSelect($("moduleFolder"), mod.folderId);
   renderRules(mod);
@@ -888,11 +900,7 @@ function render() {
   updateResults();
 }
 
-// ---- Key dates: the sidebar list of every module's dates, counting down to each ----
-
-let showPastDates = false;
-let showAllUpcoming = false;
-const UPCOMING_SHOWN = 8; // the rest behind "Show more"
+// ---- Key dates: each module's next date under its name, and its full list on its page ----
 
 const todayIso = () => {
   const t = new Date();
@@ -910,49 +918,25 @@ const shortDate = iso => {
 const countdown = days =>
   days < 0 ? "done" : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
 
-function renderKeyDates() {
-  const all = state.modules.flatMap(m => (m.dates || []).filter(d => d.date).map(d => ({ ...d, mod: m, days: daysUntil(d.date) })));
-  $("keyDates").hidden = !all.length;
-  if (!all.length) return;
-  $("keyDatesToday").textContent = "Today: " + new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
+const dateClass = days => (days < 0 ? "past" : days === 0 ? "today" : days <= 7 ? "soon" : "");
 
-  const upcoming = all.filter(d => d.days >= 0).sort((a, b) => a.days - b.days || a.label.localeCompare(b.label));
-  const past = all.filter(d => d.days < 0).sort((a, b) => b.days - a.days);
-  const item = d => {
-    const li = document.createElement("li");
-    li.className = d.days < 0 ? "past" : d.days === 0 ? "today" : d.days <= 7 ? "soon" : "";
-    li.innerHTML = `<button><span class="kd-what"><span class="kd-label"></span><span class="kd-module"></span></span>
-      <time></time></button>`;
-    li.querySelector(".kd-label").textContent = d.label;
-    li.querySelector(".kd-module").textContent = d.mod.name || "Untitled module";
-    const time = li.querySelector("time");
-    time.dateTime = d.date;
-    time.textContent = `${shortDate(d.date)} · ${countdown(d.days)}`;
-    li.querySelector("button").addEventListener("click", () => {
-      state.selectedId = d.mod.id;
-      saveState();
-      render();
-      const box = $("datesBox");
-      if (box) box.open = true;
-      showModuleOnPhone();
-    });
-    return li;
-  };
-  const shown = showAllUpcoming ? upcoming : upcoming.slice(0, UPCOMING_SHOWN);
-  $("keyDatesList").replaceChildren(...shown.map(item));
-  $("keyDatesEmpty").hidden = upcoming.length > 0;
-  $("moreDatesBtn").hidden = upcoming.length <= UPCOMING_SHOWN;
-  $("moreDatesBtn").textContent = showAllUpcoming ? "Show fewer" : `Show ${upcoming.length - UPCOMING_SHOWN} more`;
-  $("pastDatesBtn").hidden = !past.length;
-  $("pastDatesBtn").textContent = showPastDates ? "Hide past dates" : `Show past dates (${past.length})`;
-  $("pastDatesList").hidden = !showPastDates;
-  $("pastDatesList").replaceChildren(...(showPastDates ? past.map(item) : []));
+// The module's next date that hasn't passed yet
+function nextDate(mod) {
+  return (mod.dates || [])
+    .filter(d => d.date && d.label)
+    .map(d => ({ ...d, days: daysUntil(d.date) }))
+    .filter(d => d.days >= 0)
+    .sort((a, b) => a.days - b.days)[0] || null;
 }
 
-// The countdown follows the calendar: redraw when the day changes or the page is shown again
+// The countdowns follow the calendar: redraw when the day changes or the app is shown again
 let keyDatesDay = todayIso();
 const refreshKeyDatesIfNewDay = () => {
-  if (todayIso() !== keyDatesDay) { keyDatesDay = todayIso(); renderKeyDates(); }
+  if (todayIso() === keyDatesDay) return;
+  keyDatesDay = todayIso();
+  renderModuleList();
+  const mod = currentModule();
+  if (mod) renderDatesEditor(mod);
 };
 setInterval(refreshKeyDatesIfNewDay, 60 * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshKeyDatesIfNewDay(); });
@@ -962,26 +946,31 @@ function renderDatesEditor(mod) {
   mod.dates = mod.dates || [];
   $("datesCount").textContent = mod.dates.length ? `(${mod.dates.length})` : "";
   const list = $("datesEdit");
-  list.replaceChildren(...mod.dates.map(d => {
+  const sorted = [...mod.dates].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  list.replaceChildren(...sorted.map(d => {
     const li = document.createElement("li");
     li.innerHTML = `<input type="text" class="de-label" aria-label="What" placeholder="e.g. Test 1">
       <input type="date" class="de-date" aria-label="Date">
       <span class="de-count muted small"></span>
-      <button class="del" title="Remove date">✕</button>`;
+      <button class="del" title="Remove date" aria-label="Remove date"><i class="ti ti-x"></i></button>`;
     const label = li.querySelector(".de-label");
     const date = li.querySelector(".de-date");
     const count = li.querySelector(".de-count");
-    const showCount = () => (count.textContent = d.date ? countdown(daysUntil(d.date)) : "");
+    const showCount = () => {
+      const days = d.date ? daysUntil(d.date) : null;
+      count.textContent = days === null ? "" : countdown(days);
+      li.className = days === null ? "" : dateClass(days);
+    };
     label.value = d.label;
     date.value = d.date || "";
     showCount();
-    label.addEventListener("input", () => { d.label = label.value; saveState(); renderKeyDates(); });
-    date.addEventListener("change", () => { d.date = date.value; showCount(); saveState(); renderKeyDates(); });
+    label.addEventListener("input", () => { d.label = label.value; saveState(); renderModuleList(); });
+    date.addEventListener("change", () => { d.date = date.value; showCount(); saveState(); renderModuleList(); });
     li.querySelector(".del").addEventListener("click", () => {
       mod.dates = mod.dates.filter(x => x.id !== d.id);
       saveState();
       renderDatesEditor(mod);
-      renderKeyDates();
+      renderModuleList();
     });
     return li;
   }));
@@ -1006,7 +995,7 @@ function renderModuleList() {
   const list = $("moduleList");
   list.innerHTML = "";
   $("noModules").hidden = state.modules.length > 0;
-  $("dragHint").hidden = !(state.folders.length && state.modules.length);
+  $("dragHint").hidden = !(state.folders.length > 1 || state.modules.length > 1);
   $("uploadFolderPick").hidden = !state.folders.length;
   fillFolderSelect($("uploadFolder"), state.uploadFolderId);
 
@@ -1014,27 +1003,63 @@ function renderModuleList() {
   state.modules.filter(m => !m.folderId).forEach(m => list.appendChild(moduleItem(m)));
 }
 
+// Bar and percentage: the final mark earned so far (green once it reaches the goal).
+// Under it, the module's next key date.
+function paintModuleRow(row, mod) {
+  const c = calculate(mod);
+  const passed = c.finalSoFar > 0 && c.finalSoFar >= (Number(mod.target) || 50);
+  row.querySelector(".m-name").textContent = mod.name || "Untitled module";
+  const mark = row.querySelector(".m-mark");
+  mark.textContent = fmt(c.finalSoFar) + "%";
+  mark.classList.toggle("passed", passed);
+  const bar = row.querySelector(".m-bar i");
+  bar.style.width = Math.max(0, Math.min(100, c.finalSoFar)) + "%";
+  bar.classList.toggle("passed", passed);
+  const next = nextDate(mod);
+  const nextEl = row.querySelector(".m-next");
+  nextEl.hidden = !next;
+  if (next) {
+    nextEl.className = "m-next " + dateClass(next.days);
+    nextEl.querySelector("span").textContent = `${next.label} · ${shortDate(next.date)} · ${countdown(next.days)}`;
+  }
+}
+
 function moduleItem(mod) {
   const li = document.createElement("li");
-  const btn = document.createElement("button");
-  btn.className = mod.id === state.selectedId ? "active" : "";
-  btn.innerHTML = `<span class="m-name"></span><span class="m-mark"></span>`;
-  btn.querySelector(".m-name").textContent = mod.name || "Untitled module";
-  btn.querySelector(".m-mark").textContent = fmt(calculate(mod).finalSoFar) + "%";
+  li.className = "mod-item";
+  li.dataset.mid = mod.id;
+  li.innerHTML = `
+    <button class="mod-btn">
+      <span class="m-top"><span class="m-name"></span><span class="m-mark"></span></span>
+      <span class="m-bar"><i></i></span>
+      <span class="m-next" hidden><i class="ti ti-calendar-event"></i><span></span></span>
+    </button>
+    <span class="sort-handle" title="Drag to reorder" aria-label="Drag to reorder"><i class="ti ti-grip-vertical"></i></span>`;
+  const btn = li.querySelector(".mod-btn");
+  btn.classList.toggle("active", mod.id === state.selectedId);
   btn.dataset.id = mod.id;
-  btn.draggable = true;
-  btn.addEventListener("dragstart", e => {
-    e.dataTransfer.setData("text/module-id", mod.id);
-    e.dataTransfer.effectAllowed = "move";
+  paintModuleRow(li, mod);
+  btn.addEventListener("click", () => openModule(mod.id));
+
+  makeSortable(li.querySelector(".sort-handle"), li, {
+    siblings: () => [...li.parentElement.children].filter(c => c.classList.contains("mod-item")),
+    onReorder: (from, to) => {
+      const ids = [...li.parentElement.children].filter(c => c.classList.contains("mod-item")).map(c => c.dataset.mid);
+      ids.splice(to, 0, ids.splice(from, 1)[0]);
+      reorderModules(ids);
+    },
+    onDropFolder: fid => moveModule(mod.id, fid),
   });
-  btn.addEventListener("click", () => {
-    state.selectedId = mod.id;
-    saveState();
-    render();
-    showModuleOnPhone();
-  });
-  li.appendChild(btn);
   return li;
+}
+
+// Puts the given modules (all in one folder, or all outside folders) in this order
+function reorderModules(ids) {
+  const byId = Object.fromEntries(state.modules.map(m => [m.id, m]));
+  const slots = state.modules.map((m, i) => (ids.includes(m.id) ? i : -1)).filter(i => i >= 0);
+  slots.forEach((slot, k) => (state.modules[slot] = byId[ids[k]]));
+  saveState();
+  renderModuleList();
 }
 
 function folderItem(f) {
@@ -1043,35 +1068,42 @@ function folderItem(f) {
   li.className = "folder" + (f.collapsed ? " collapsed" : "");
   li.dataset.fid = f.id;
   li.innerHTML = `
-    <div class="folder-head">
-      <button class="folder-toggle" aria-label="Open or close folder">▾</button>
-      <span class="folder-icon">📁</span>
-      <input class="folder-name" aria-label="Folder name">
+    <div class="folder-head" role="button" tabindex="0" aria-expanded="${!f.collapsed}">
+      <i class="ti ti-folder folder-icon"></i>
+      <span class="folder-name"></span>
       <span class="folder-count"></span>
-      <button class="folder-del" title="Delete folder (keeps its modules)">✕</button>
+      <span class="folder-tools">
+        <button class="folder-tool rename" title="Rename folder" aria-label="Rename folder"><i class="ti ti-pencil"></i></button>
+        <button class="folder-tool del" title="Delete folder (keeps its modules)" aria-label="Delete folder"><i class="ti ti-trash"></i></button>
+      </span>
+      <span class="sort-handle" title="Drag to reorder" aria-label="Drag to reorder"><i class="ti ti-grip-vertical"></i></span>
+      <i class="ti ti-chevron-down folder-chevron"></i>
     </div>
-    <ul class="module-list folder-modules"></ul>`;
-  const nameIn = li.querySelector(".folder-name");
-  nameIn.value = f.name;
+    <div class="folder-body"><div><ul class="module-list folder-modules"></ul></div></div>`;
+  const head = li.querySelector(".folder-head");
+  li.querySelector(".folder-name").textContent = f.name || "Unnamed folder";
   li.querySelector(".folder-count").textContent = mods.length;
   const inner = li.querySelector(".folder-modules");
   if (mods.length) mods.forEach(m => inner.appendChild(moduleItem(m)));
-  else inner.innerHTML = `<li class="folder-empty">Empty. Drag modules here.</li>`;
+  else inner.innerHTML = `<li class="folder-empty">No modules yet. Drag one onto this folder, or choose it under <b>Save to folder</b> when you upload.</li>`;
 
-  li.querySelector(".folder-toggle").addEventListener("click", () => {
+  // Tap the folder to open or close it
+  const toggle = () => {
     f.collapsed = !f.collapsed;
+    li.classList.toggle("collapsed", f.collapsed);
+    head.setAttribute("aria-expanded", String(!f.collapsed));
     saveState();
-    renderModuleList();
+  };
+  head.addEventListener("click", e => {
+    if (e.target.closest(".folder-tools, .sort-handle, .folder-rename")) return;
+    toggle();
   });
-  nameIn.addEventListener("input", () => {
-    f.name = nameIn.value;
-    saveState();
-    fillFolderSelect($("uploadFolder"), state.uploadFolderId);
-    const mod = currentModule();
-    if (mod) fillFolderSelect($("moduleFolder"), mod.folderId);
+  head.addEventListener("keydown", e => {
+    if ((e.key === "Enter" || e.key === " ") && e.target === head) { e.preventDefault(); toggle(); }
   });
-  nameIn.addEventListener("keydown", e => { if (e.key === "Enter") nameIn.blur(); });
-  li.querySelector(".folder-del").addEventListener("click", () => {
+
+  li.querySelector(".rename").addEventListener("click", () => startRenameFolder(li, f));
+  li.querySelector(".del").addEventListener("click", () => {
     const msg = mods.length
       ? `Delete the folder "${f.name}"? Its ${mods.length} module${mods.length > 1 ? "s" : ""} will stay, just not in a folder.`
       : `Delete the folder "${f.name}"?`;
@@ -1083,31 +1115,114 @@ function folderItem(f) {
     render();
   });
 
-  // Drop a module on the folder to move it in
-  li.addEventListener("dragover", e => {
-    if (!e.dataTransfer.types.includes("text/module-id")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    li.classList.add("drop-target");
-  });
-  li.addEventListener("dragleave", e => { if (!li.contains(e.relatedTarget)) li.classList.remove("drop-target"); });
-  li.addEventListener("drop", e => {
-    e.preventDefault();
-    e.stopPropagation();
-    li.classList.remove("drop-target");
-    moveModule(e.dataTransfer.getData("text/module-id"), f.id);
+  makeSortable(li.querySelector(".sort-handle"), li, {
+    siblings: () => [...$("moduleList").children].filter(c => c.classList.contains("folder")),
+    onReorder: (from, to) => {
+      state.folders.splice(to, 0, state.folders.splice(from, 1)[0]);
+      saveState();
+      renderModuleList();
+    },
   });
   return li;
+}
+
+// Swaps the folder's name for a text box; Enter or tapping elsewhere saves it
+function startRenameFolder(li, f) {
+  const nameEl = li.querySelector(".folder-name");
+  const input = document.createElement("input");
+  input.className = "folder-rename";
+  input.value = f.name;
+  input.setAttribute("aria-label", "Folder name");
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const save = () => {
+    if (done) return;
+    done = true;
+    f.name = input.value.trim() || f.name || "Unnamed folder";
+    saveState();
+    renderModuleList();
+    const mod = currentModule();
+    if (mod) fillFolderSelect($("moduleFolder"), mod.folderId);
+  };
+  input.addEventListener("keydown", e => {
+    if (e.key === "Escape") input.value = f.name;
+    if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); save(); }
+  });
+  input.addEventListener("blur", save);
 }
 
 function moveModule(moduleId, folderId) {
   const mod = state.modules.find(m => m.id === moduleId);
   if (!mod || mod.folderId === folderId) return;
   mod.folderId = folderId;
-  const f = state.folders.find(x => x.id === folderId);
-  if (f) f.collapsed = false;
   saveState();
   render();
+}
+
+// Drag to reorder, by the ⋮⋮ handle. Uses pointer events, so it works with a mouse and a finger.
+// onDropFolder: dropping on another folder's heading moves the item into that folder.
+function makeSortable(handle, item, { siblings, onReorder, onDropFolder }) {
+  handle.addEventListener("click", e => e.stopPropagation());
+  handle.addEventListener("pointerdown", e => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const items = siblings();
+    const from = items.indexOf(item);
+    if (from < 0) return;
+    const rects = items.map(el => { const r = el.getBoundingClientRect(); return { top: r.top + window.scrollY, height: r.height }; });
+    const gap = items.length > 1 ? Math.max(0, rects[1].top - (rects[0].top + rects[0].height)) : 8;
+    const startY = e.clientY + window.scrollY;
+    let to = from, folderTarget = null, moved = false;
+
+    item.classList.add("dragging");
+    document.body.classList.add("is-dragging");
+    items.forEach(el => el !== item && el.classList.add("drag-shift"));
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+
+    const clearTargets = () => document.querySelectorAll(".folder.drop-target").forEach(el => el.classList.remove("drop-target"));
+    const move = ev => {
+      const dy = ev.clientY + window.scrollY - startY;
+      if (Math.abs(dy) > 4) moved = true;
+      item.style.transform = `translateY(${dy}px)`;
+      const middle = rects[from].top + rects[from].height / 2 + dy;
+      to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < middle).length;
+      const step = rects[from].height + gap;
+      items.forEach((el, i) => {
+        if (i === from) return;
+        const shift = i > from && i <= to ? -step : i < from && i >= to ? step : 0;
+        el.style.transform = shift ? `translateY(${shift}px)` : "";
+      });
+      if (onDropFolder) {
+        const head = document.elementsFromPoint(ev.clientX, ev.clientY)
+          .map(el => el.closest && el.closest(".folder-head"))
+          .find(h => h && !item.contains(h) && !h.closest(".folder").contains(item));
+        clearTargets();
+        folderTarget = head ? head.closest(".folder").dataset.fid : null;
+        if (head) head.closest(".folder").classList.add("drop-target");
+      }
+      // Keep scrolling while dragging near the top or bottom of the screen
+      if (ev.clientY < 80) window.scrollBy(0, -10);
+      else if (ev.clientY > window.innerHeight - 80) window.scrollBy(0, 10);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      document.body.classList.remove("is-dragging");
+      item.classList.remove("dragging");
+      item.style.transform = "";
+      items.forEach(el => { el.style.transform = ""; el.classList.remove("drag-shift"); });
+      clearTargets();
+      if (folderTarget) onDropFolder(folderTarget);
+      else if (moved && to !== from) onReorder(from, to);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
 }
 
 function fillFolderSelect(sel, value) {
@@ -1290,6 +1405,7 @@ function updateResults() {
 
   // Stats
   $("statFinal").textContent = fmt(c.finalSoFar) + "%";
+  $("finalBar").style.width = Math.max(0, Math.min(100, c.finalSoFar)) + "%";
   $("statFinalSub").textContent = "earned out of 100%";
   $("statAvg").textContent = c.average === null ? "–" : fmt(c.average) + "%";
   $("statAvgSub").textContent = c.average === null ? "No marks yet" : "on the work you've done";
@@ -1302,12 +1418,9 @@ function updateResults() {
 
   renderNeeded(mod, c);
 
-  // Keep sidebar mark in sync
-  const sideBtn = document.querySelector(`.module-list button[data-id="${mod.id}"]`);
-  if (sideBtn) {
-    sideBtn.querySelector(".m-mark").textContent = fmt(c.finalSoFar) + "%";
-    sideBtn.querySelector(".m-name").textContent = mod.name || "Untitled module";
-  }
+  // Keep the module's row in the list in sync (mark, bar, name)
+  const row = document.querySelector(`.mod-item[data-mid="${mod.id}"]`);
+  if (row) paintModuleRow(row, mod);
 }
 
 function renderNeeded(mod, c) {
@@ -1328,7 +1441,7 @@ function renderNeeded(mod, c) {
     box.classList.add(ok ? "good" : "bad");
     box.innerHTML = `<p>Your final mark for this module</p>
       <span class="big">${fmt(c.finalSoFar)}%</span>
-      <p>${ok ? `🎉 You reached your goal of ${target}%.` : `This is below your goal of ${target}%.`}</p>`;
+      <p>${ok ? `You reached your goal of ${target}%. Well done!` : `This is below your goal of ${target}%.`}</p>`;
     return;
   }
 
@@ -1344,7 +1457,7 @@ function renderNeeded(mod, c) {
     box.classList.add("good");
     box.innerHTML = `<p>You need in ${finalName}</p>
       <span class="big">0%</span>
-      <p>🎉 You already have enough for ${target}%. (Check if your module has a sub-minimum for ${finalName}.)</p>`;
+      <p>You already have enough for ${target}%. (Check if your module has a sub-minimum for ${finalName}.)</p>`;
   } else if (n > 100) {
     box.classList.add("bad");
     const best = c.finalSoFar + (c.finalRow.weight * (100 / c.totalWeight));
@@ -1666,13 +1779,29 @@ function fromAiAnswer(answer) {
   return { name: String(answer.moduleName || "").trim().slice(0, 60), groups: usedGroups, assessments, notes, rules, dates };
 }
 
-// Shows whether the AI reader is on, in the sidebar button and on the module page
+// Shows whether the AI reader is on, in the menu and on the module page
 function renderAiState() {
   const on = aiOn();
-  $("aiBtn").textContent = on ? "🤖 AI reader: On" : "🤖 AI reader: Off";
-  $("aiBtn").classList.toggle("on", on);
+  $("aiState").textContent = on ? "On" : "Off";
+  $("aiState").classList.toggle("on", on);
   const mod = currentModule();
   $("rereadBtn").hidden = !(on && mod && mod.sourceText);
+}
+
+// A short message at the bottom of the screen, e.g. after uploading
+function showToast(text, ms = 6000) {
+  let toast = $("toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    toast.className = "toast";
+    toast.setAttribute("role", "status");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), ms);
 }
 
 // ---------- Actions ----------
@@ -1724,11 +1853,13 @@ async function handleFiles(files) {
       return;
     }
   }
-  status.textContent = (added ? `Added ${added} module${added > 1 ? "s" : ""}. Check the weights below.` : "") +
+  const message = (added ? `Added ${added} module${added > 1 ? "s" : ""}. Check the weights.` : "") +
     (aiProblems.length ? ` The AI couldn't read ${aiProblems.join("; ")}. The built-in reader was used instead.` : "");
+  status.textContent = "";
   saveState();
-  render();
-  if (added) showModuleOnPhone();
+  if (added) openModule(state.selectedId);
+  else render();
+  if (message) showToast(message, aiProblems.length ? 12000 : 5000);
 }
 
 // "Read again with AI": replaces the assessments, keeping marks of assessments with the same name
@@ -1737,11 +1868,12 @@ async function rereadWithAi() {
   if (!mod || !mod.sourceText) return;
   if (!confirm(`Let the AI read "${mod.name}" again? Its assessments and key dates will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
   const btn = $("rereadBtn");
+  const label = text => (btn.innerHTML = `<i class="ti ti-sparkles"></i> ${escapeHtml(text)}`);
   btn.disabled = true;
-  btn.textContent = "🤖 Reading…";
+  label("Reading…");
   try {
     const pdf = /\.pdf$/i.test(mod.fileName || "") ? await loadFile(mod.id) : null;
-    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg), pdf), mod.sourceText);
+    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, label, pdf), mod.sourceText);
     const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
     parsed.assessments.forEach(a => {
       const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
@@ -1756,7 +1888,7 @@ async function rereadWithAi() {
     alert("The AI couldn't read this framework: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "🤖 Read again with AI";
+    label("Read again with AI");
   }
 }
 
@@ -1785,10 +1917,7 @@ $("addManualBtn").addEventListener("click", () => {
     ],
   };
   state.modules.push(mod);
-  state.selectedId = mod.id;
-  saveState();
-  render();
-  showModuleOnPhone();
+  openModule(mod.id);
   $("moduleName").select();
 });
 
@@ -1840,23 +1969,16 @@ $("aiTest").addEventListener("click", async () => {
 $("rereadBtn").addEventListener("click", rereadWithAi);
 
 // Key dates
-$("pastDatesBtn").addEventListener("click", () => {
-  showPastDates = !showPastDates;
-  renderKeyDates();
-});
-$("moreDatesBtn").addEventListener("click", () => {
-  showAllUpcoming = !showAllUpcoming;
-  renderKeyDates();
-});
 $("addDateBtn").addEventListener("click", () => {
   const mod = currentModule();
   mod.dates = mod.dates || [];
-  mod.dates.push({ id: uid(), label: "", date: todayIso() });
+  const d = { id: uid(), label: "", date: todayIso() };
+  mod.dates.push(d);
   saveState();
   renderDatesEditor(mod);
-  renderKeyDates();
-  const inputs = document.querySelectorAll("#datesEdit .de-label");
-  if (inputs.length) inputs[inputs.length - 1].focus();
+  renderModuleList();
+  const inputs = [...document.querySelectorAll("#datesEdit .de-label")].filter(i => !i.value);
+  if (inputs.length) inputs[0].focus();
 });
 
 // Folders
@@ -1865,8 +1987,8 @@ $("addFolderBtn").addEventListener("click", () => {
   state.folders.push(f);
   saveState();
   render();
-  const input = document.querySelector(`.folder[data-fid="${f.id}"] .folder-name`);
-  if (input) { input.focus(); input.select(); }
+  const li = document.querySelector(`.folder[data-fid="${f.id}"]`);
+  if (li) startRenameFolder(li, f);
 });
 
 $("uploadFolder").addEventListener("change", e => {
@@ -1875,18 +1997,6 @@ $("uploadFolder").addEventListener("change", e => {
 });
 
 $("moduleFolder").addEventListener("change", e => moveModule(currentModule().id, e.target.value || null));
-
-// Dropping a module on the list itself (not on a folder) takes it out of its folder
-const moduleListEl = $("moduleList");
-moduleListEl.addEventListener("dragover", e => {
-  if (e.dataTransfer.types.includes("text/module-id")) e.preventDefault();
-});
-moduleListEl.addEventListener("drop", e => {
-  const id = e.dataTransfer.getData("text/module-id");
-  if (!id) return;
-  e.preventDefault();
-  moveModule(id, null);
-});
 
 $("addGroupBtn").addEventListener("click", () => {
   const mod = currentModule();
@@ -1909,10 +2019,55 @@ $("deleteModuleBtn").addEventListener("click", () => {
   if (!confirm(`Delete "${mod.name}" and all its marks?`)) return;
   state.modules = state.modules.filter(m => m.id !== mod.id);
   deleteFile(mod.id);
-  state.selectedId = state.modules.length ? state.modules[state.modules.length - 1].id : null;
-  saveState();
-  render();
+  openModule(null);
 });
+
+// Back to the list (all folders closed again)
+$("backBtn").addEventListener("click", () => openModule(null));
+
+// "+": show or hide the upload box
+$("addBtn").addEventListener("click", () => {
+  const panel = $("addPanel");
+  const show = panel.hidden;
+  if (show && currentModule() && onPhone()) openModule(null); // on a phone, the upload box is on the list
+  panel.hidden = !show;
+  if (show) { window.scrollTo({ top: 0, behavior: "smooth" }); $("addBtn").blur(); }
+});
+$("closeAddBtn").addEventListener("click", () => { if (state.modules.length) $("addPanel").hidden = true; });
+
+// The ⋯ menu
+const menu = $("menu");
+const setMenu = open => {
+  menu.hidden = !open;
+  $("menuBtn").setAttribute("aria-expanded", String(open));
+};
+$("menuBtn").addEventListener("click", e => { e.stopPropagation(); setMenu(menu.hidden); });
+document.addEventListener("click", e => { if (!menu.hidden && !e.target.closest(".menu-wrap")) setMenu(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
+menu.querySelectorAll(".menu-item").forEach(item => item.addEventListener("click", () => setMenu(false)));
+
+// Light, dark, or follow the phone/computer (kept per device)
+const THEME_KEY = "markCalc.theme";
+function applyTheme(choice) {
+  if (choice === "light" || choice === "dark") document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
+  document.querySelectorAll("[data-theme-choice]").forEach(b => {
+    const active = b.dataset.themeChoice === (choice || "auto");
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-checked", String(active));
+  });
+  const dark = choice === "dark" || (choice !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#1a1f29" : "#3b5bdb";
+}
+let themeChoice = "auto";
+try { themeChoice = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* ignore */ }
+applyTheme(themeChoice);
+document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", () => {
+  themeChoice = b.dataset.themeChoice;
+  try { localStorage.setItem(THEME_KEY, themeChoice); } catch (e) { /* ignore */ }
+  applyTheme(themeChoice);
+}));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(themeChoice));
 
 $("targetInput").addEventListener("input", e => {
   currentModule().target = parseFloat(e.target.value) || 0;
@@ -1980,11 +2135,12 @@ $("importInput").addEventListener("change", async e => {
     if (!data || !Array.isArray(data.modules)) throw new Error("Not a Mark Calculator backup.");
     if (!confirm("Replace your current modules with this backup?")) return;
     state = upgradeState(data);
-    saveState();
-    render();
+    openModule(null);
+    showToast(`Restored ${state.modules.length} module${state.modules.length === 1 ? "" : "s"}.`);
   } catch (err) {
     alert("Could not restore: " + err.message);
   }
 });
 
-render();
+// Start on the clean list: no module open, every folder closed
+openModule(null);

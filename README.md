@@ -2,10 +2,12 @@
 
 A website where students upload their module frameworks and get a mark calculator for every module.
 
-- Upload a module framework (PDF, Word `.docx` or `.txt`). The site finds every test and assignment and its weight.
-- Add as many modules as you like. Each module keeps its own marks.
-- **Key dates:** the dates of tests, exams and due dates are read from each framework and listed under **Key dates** in the sidebar, soonest first, with a countdown ("today", "tomorrow", "in 5 days") that updates every day. Fix or add dates in the **Key dates** list on a module's page.
-- Sort modules into folders (e.g. "Semester 1", "Semester 2"): click **+ New folder**, click a folder's name to rename it, and drag modules onto it or pick the folder at the top of a module's page. Choose **Save to folder** before uploading to put new modules straight into a folder.
+- Tap **+** at the top to upload a module framework (PDF, Word `.docx` or `.txt`). The site finds every test and assignment and its weight.
+- Add as many modules as you like. Each module keeps its own marks. In the list, each module shows its **final mark so far** as a percentage and a bar (green once it reaches your goal), and its **next key date** with a countdown that updates every day.
+- Tap a module to open it, and **← My modules** to go back. Folders close again when you go back, so the list stays clean.
+- **Key dates:** the dates of tests, exams and due dates are read from each framework. Fix or add dates in the **Key dates** list on a module's page.
+- Sort modules into folders (e.g. "Semester 1", "Semester 2"): tap **New folder**, open a folder and tap the pencil to rename it. Drag folders and modules by their **⋮⋮** handle to put them in your own order (works with a finger too); drop a module on a folder to move it there, or pick the folder at the top of a module's page. Choose **Save to folder** before uploading to put new modules straight into a folder.
+- The **⋯** menu has the AI reader, Install app, Backup, Restore and Light / Dark / Auto appearance.
 - Enter a mark (as `68` or `34/50`) and your final mark updates immediately.
 - When every mark except the final test (e.g. A2) is entered, the bottom of the page shows the percentage you need in that test to reach your goal (50% by default).
 - Everything is saved automatically in your browser. Use **Backup** / **Restore** to move your marks to another device or browser.

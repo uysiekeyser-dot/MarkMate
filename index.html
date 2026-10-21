@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mark Calculator</title>
   <!-- Installable as a phone app -->
   <link rel="manifest" href="manifest.webmanifest">
@@ -13,100 +13,122 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Marks">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <!-- Light or dark, as chosen in the menu (before the page draws, so it doesn't flash) -->
+  <script>try { var t = localStorage.getItem("markCalc.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+  <!-- Font and icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css">
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <h1>📘 Mark Calculator</h1>
+    <div class="brand">
+      <img src="icon-192.png" alt="" class="brand-icon">
+      <h1>Mark Calculator</h1>
+    </div>
     <div class="topbar-actions">
-      <button id="installBtn" class="btn btn-primary" hidden>📲 Install app</button>
-      <button id="exportBtn" class="btn btn-ghost" title="Download a backup of all your modules and marks">Backup</button>
-      <label class="btn btn-ghost" title="Load a backup file">
-        Restore
-        <input type="file" id="importInput" accept=".json" hidden>
-      </label>
+      <button id="addBtn" class="icon-btn icon-btn-primary" aria-label="Add a module" title="Add a module"><i class="ti ti-plus"></i></button>
+      <div class="menu-wrap">
+        <button id="menuBtn" class="icon-btn" aria-label="Menu" aria-haspopup="true" aria-expanded="false" title="Menu"><i class="ti ti-dots"></i></button>
+        <div id="menu" class="menu" hidden>
+          <button id="aiBtn" class="menu-item"><i class="ti ti-sparkles"></i><span>AI reader</span><span id="aiState" class="menu-tag">Off</span></button>
+          <button id="installBtn" class="menu-item" hidden><i class="ti ti-device-mobile"></i><span>Install app</span></button>
+          <button id="exportBtn" class="menu-item"><i class="ti ti-download"></i><span>Backup</span></button>
+          <label class="menu-item"><i class="ti ti-upload"></i><span>Restore</span>
+            <input type="file" id="importInput" accept=".json" hidden>
+          </label>
+          <div class="menu-sep"></div>
+          <div class="menu-label">Appearance</div>
+          <div class="theme-switch" role="radiogroup" aria-label="Appearance">
+            <button data-theme-choice="auto" role="radio"><i class="ti ti-device-desktop"></i>Auto</button>
+            <button data-theme-choice="light" role="radio"><i class="ti ti-sun"></i>Light</button>
+            <button data-theme-choice="dark" role="radio"><i class="ti ti-moon"></i>Dark</button>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
-  <div class="layout">
-    <!-- Sidebar: upload + list of modules -->
+  <div id="layout" class="layout">
+    <!-- Sidebar: adding modules + the list of modules -->
     <aside class="sidebar">
-      <div id="dropZone" class="drop-zone">
-        <p class="drop-title">Upload module framework</p>
-        <p class="drop-sub">PDF, Word (.docx) or text file. You can choose several at once.</p>
-        <label class="btn btn-primary">
-          Choose files
-          <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple hidden>
-        </label>
-        <label class="folder-pick" id="uploadFolderPick">Save to folder:
-          <select id="uploadFolder"></select>
-        </label>
-        <p id="uploadStatus" class="upload-status"></p>
-      </div>
-
-      <button id="addManualBtn" class="btn btn-ghost btn-block">+ Add module manually</button>
-      <button id="aiBtn" class="btn btn-ghost btn-block ai-btn">🤖 AI reader: Off</button>
+      <section id="addPanel" class="add-panel" hidden>
+        <div id="dropZone" class="drop-zone">
+          <i class="ti ti-file-upload drop-icon"></i>
+          <p class="drop-title">Upload module framework</p>
+          <p class="drop-sub">PDF, Word (.docx) or text file. You can choose several at once.</p>
+          <label class="btn btn-primary">
+            Choose files
+            <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple hidden>
+          </label>
+          <label class="folder-pick" id="uploadFolderPick">Save to folder
+            <select id="uploadFolder"></select>
+          </label>
+          <p id="uploadStatus" class="upload-status"></p>
+        </div>
+        <div class="add-panel-actions">
+          <button id="addManualBtn" class="btn btn-ghost btn-small"><i class="ti ti-pencil-plus"></i> Add manually</button>
+          <button id="closeAddBtn" class="btn btn-ghost btn-small">Close</button>
+        </div>
+      </section>
 
       <div class="side-heading-row">
         <h2 class="side-heading">My modules</h2>
-        <button id="addFolderBtn" class="link-btn">+ New folder</button>
+        <button id="addFolderBtn" class="link-btn"><i class="ti ti-folder-plus"></i> New folder</button>
       </div>
       <ul id="moduleList" class="module-list"></ul>
-      <p id="dragHint" class="muted small" hidden>Drag a module onto a folder to move it there.</p>
-      <p id="noModules" class="muted small">No modules yet. Upload a module framework to start.</p>
-
-      <section id="keyDates" class="key-dates" hidden>
-        <h2 class="side-heading">Key dates</h2>
-        <p id="keyDatesToday" class="muted small"></p>
-        <ul id="keyDatesList" class="key-dates-list"></ul>
-        <p id="keyDatesEmpty" class="muted small" hidden>No upcoming dates.</p>
-        <button id="moreDatesBtn" class="link-btn" hidden></button>
-        <button id="pastDatesBtn" class="link-btn" hidden></button>
-        <ul id="pastDatesList" class="key-dates-list past-list" hidden></ul>
-      </section>
+      <p id="dragHint" class="muted small drag-hint" hidden><i class="ti ti-grip-vertical"></i> Drag to reorder. Drop a module on a folder to move it there.</p>
+      <div id="noModules" class="empty-state">
+        <i class="ti ti-chart-bar"></i>
+        <p><b>Add your first module</b></p>
+        <p class="muted small">Upload its module framework and the calculator is made for you.</p>
+      </div>
     </aside>
 
-    <!-- Main: selected module -->
+    <!-- Main: the open module -->
     <main id="main" class="main">
       <section id="welcome" class="card welcome">
-        <h2>Welcome!</h2>
+        <h2>Welcome</h2>
         <ol>
           <li>Upload the module framework (study guide) for each of your modules.</li>
-          <li>The site finds every test and assignment with its weight. Check them and fix anything it got wrong.</li>
+          <li>The calculator finds every test and assignment with its weight. Check them and fix anything it got wrong.</li>
           <li>Enter your marks as you get them. Your final mark updates straight away.</li>
-          <li>Once every mark except the last test is entered, the bottom of the page shows what you need in that test.</li>
+          <li>Once every mark except the last test is entered, you'll see what you need in that test.</li>
         </ol>
-        <p class="muted small">Everything is saved in this browser automatically. Use <b>Backup</b> to move your marks to another device.</p>
+        <p class="muted small">Everything is saved on this device automatically. Use <b>Backup</b> in the menu to move your marks to another device.</p>
       </section>
 
       <section id="moduleView" hidden>
+        <button id="backBtn" class="back-btn"><i class="ti ti-arrow-left"></i> My modules</button>
         <div class="card">
           <div class="module-header">
             <input id="moduleName" class="module-name" aria-label="Module name">
-            <button id="rereadBtn" class="btn btn-ghost btn-small" hidden title="Let the AI read this module's framework again">🤖 Read again with AI</button>
-            <button id="deleteModuleBtn" class="btn btn-danger btn-small">Delete module</button>
+            <button id="rereadBtn" class="btn btn-ghost btn-small" hidden title="Let the AI read this module's framework again"><i class="ti ti-sparkles"></i> Read again with AI</button>
+            <button id="deleteModuleBtn" class="btn btn-danger btn-small"><i class="ti ti-trash"></i> Delete</button>
           </div>
           <div class="module-meta">
             <p id="moduleSource" class="muted small"></p>
-            <label class="folder-pick small">Folder:
+            <label class="folder-pick small">Folder
               <select id="moduleFolder"></select>
             </label>
           </div>
           <p id="weightWarning" class="warning" hidden></p>
+          <details id="datesBox" class="rules dates-box">
+            <summary><i class="ti ti-calendar"></i> Key dates <span id="datesCount"></span></summary>
+            <ul id="datesEdit" class="dates-edit"></ul>
+            <button id="addDateBtn" class="link-btn"><i class="ti ti-plus"></i> Add date</button>
+            <p class="muted small">Found in your framework. Fix or add dates here: the next one shows under the module's name in your list.</p>
+          </details>
           <details id="rulesBox" class="rules" hidden>
-            <summary>Rules from your framework <span id="rulesCount"></span></summary>
+            <summary><i class="ti ti-list-check"></i> Rules from your framework <span id="rulesCount"></span></summary>
             <ul id="rulesList"></ul>
             <p class="muted small">These come from your framework. The calculator doesn't apply them for you: check them yourself, e.g. a sub-minimum for a test.</p>
-          </details>
-          <details id="datesBox" class="rules dates-box">
-            <summary>Key dates <span id="datesCount"></span></summary>
-            <ul id="datesEdit" class="dates-edit"></ul>
-            <button id="addDateBtn" class="link-btn">+ Add date</button>
-            <p class="muted small">Found in your framework. Fix or add dates here: they show under <b>Key dates</b> in the sidebar.</p>
           </details>
 
           <div class="table-wrap">
@@ -134,8 +156,8 @@
             </table>
           </div>
           <div class="table-actions">
-            <button id="addRowBtn" class="btn btn-ghost btn-small">+ Add assessment</button>
-            <button id="addGroupBtn" class="btn btn-ghost btn-small">+ Add group</button>
+            <button id="addRowBtn" class="btn btn-ghost btn-small"><i class="ti ti-plus"></i> Add assessment</button>
+            <button id="addGroupBtn" class="btn btn-ghost btn-small"><i class="ti ti-stack-2"></i> Add group</button>
           </div>
           <p class="muted small hint">Type a mark as a percentage (e.g. <b>68</b>) or as a score (e.g. <b>34/50</b>).
             Use a <b>group</b> when your framework has parts like "Class mark 40%" or "Practical mark" with their own tests inside.</p>
@@ -143,9 +165,10 @@
 
         <!-- Live results -->
         <div class="stats">
-          <div class="stat">
+          <div class="stat stat-main">
             <span class="stat-label">Final mark so far</span>
             <span class="stat-value" id="statFinal">0%</span>
+            <div class="progress"><div id="finalBar"></div></div>
             <span class="stat-sub" id="statFinalSub">out of 100%</span>
           </div>
           <div class="stat">
@@ -163,7 +186,7 @@
         <!-- Needed for final test -->
         <div id="neededCard" class="card needed">
           <div class="target-row">
-            <label for="targetInput">Final mark I want:</label>
+            <label for="targetInput">Final mark I want</label>
             <input id="targetInput" type="number" min="0" max="100" step="1">
             <span>%</span>
             <div class="chips">
@@ -180,7 +203,7 @@
 
   <!-- How to install on an iPhone (Safari has no install button) -->
   <dialog id="installDialog" class="ai-dialog">
-    <h2>📲 Install on your iPhone or iPad</h2>
+    <h2><i class="ti ti-device-mobile"></i> Install on your iPhone or iPad</h2>
     <ol>
       <li>Open this page in <b>Safari</b>.</li>
       <li>Tap the <b>Share</b> button (the square with an arrow pointing up).</li>
@@ -197,7 +220,7 @@
 
   <!-- AI reader settings -->
   <dialog id="aiDialog" class="ai-dialog">
-    <h2>🤖 AI reader (Google Gemini)</h2>
+    <h2><i class="ti ti-sparkles"></i> AI reader (Google Gemini)</h2>
     <p>With the AI reader on, every framework you upload is read by Google's Gemini AI. It understands tables,
       sentences and rules much better than the built-in reader. It's free with your own key.</p>
     <ol>
@@ -211,7 +234,7 @@
     <label class="field">Model <span class="muted small">(leave empty for Google's latest free Flash model)</span>
       <input id="aiModel" spellcheck="false" placeholder="gemini-flash-latest">
     </label>
-    <p class="muted small">Your key is saved only in this browser and is not included in Backup. The text of each framework
+    <p class="muted small">Your key is saved only on this device and is not included in Backup. The text of each framework
       you upload is sent to Google. On the free tier Google may use it to improve its products, so don't upload anything private.
       If the AI can't read a file, the built-in reader is used instead.</p>
     <p id="aiStatus" class="ai-status small"></p>
@@ -224,6 +247,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

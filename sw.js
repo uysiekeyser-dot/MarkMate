@@ -2,12 +2,13 @@
  *
  * - The site's own files (page, script, style, icons): the newest version from the internet first,
  *   so updates uploaded to GitHub show up straight away; the saved copy when offline.
- * - The PDF and Word readers from cdnjs: the saved copy first (those files never change).
+ * - The PDF and Word readers, the icons and the font from other sites: the saved copy first
+ *   (those files never change).
  * - Everything else (e.g. the Gemini AI reader) is left alone and always needs internet.
  *
  * Change CACHE when the list below changes, so old copies are cleared out.
  */
-const CACHE = "mark-calculator-v1";
+const CACHE = "mark-calculator-v2";
 
 const SITE_FILES = [
   "./",
@@ -25,7 +26,12 @@ const READER_FILES = [
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js",
+  "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css",
+  "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
 ];
+
+// Other sites whose files never change: the readers, the icons and the font
+const SAVED_FIRST_HOSTS = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"];
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -52,7 +58,7 @@ self.addEventListener("fetch", event => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin === self.location.origin) event.respondWith(newestFirst(req));
-  else if (url.hostname === "cdnjs.cloudflare.com") event.respondWith(savedFirst(req));
+  else if (SAVED_FIRST_HOSTS.includes(url.hostname)) event.respondWith(savedFirst(req));
 });
 
 async function newestFirst(req) {
