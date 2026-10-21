@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mark Calculator</title>
+  <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
+  <link rel="stylesheet" href="style.css?v=2">
+  <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>📘 Mark Calculator</h1>
+    <div class="topbar-actions">
+      <button id="exportBtn" class="btn btn-ghost" title="Download a backup of all your modules and marks">Backup</button>
+      <label class="btn btn-ghost" title="Load a backup file">
+        Restore
+        <input type="file" id="importInput" accept=".json" hidden>
+      </label>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar: upload + list of modules -->
+    <aside class="sidebar">
+      <div id="dropZone" class="drop-zone">
+        <p class="drop-title">Upload module framework</p>
+        <p class="drop-sub">PDF, Word (.docx) or text file. You can choose several at once.</p>
+        <label class="btn btn-primary">
+          Choose files
+          <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple hidden>
+        </label>
+        <p id="uploadStatus" class="upload-status"></p>
+      </div>
+
+      <button id="addManualBtn" class="btn btn-ghost btn-block">+ Add module manually</button>
+
+      <h2 class="side-heading">My modules</h2>
+      <ul id="moduleList" class="module-list"></ul>
+      <p id="noModules" class="muted small">No modules yet. Upload a module framework to start.</p>
+    </aside>
+
+    <!-- Main: selected module -->
+    <main id="main" class="main">
+      <section id="welcome" class="card welcome">
+        <h2>Welcome!</h2>
+        <ol>
+          <li>Upload the module framework (study guide) for each of your modules.</li>
+          <li>The site finds every test and assignment with its weight. Check them and fix anything it got wrong.</li>
+          <li>Enter your marks as you get them. Your final mark updates straight away.</li>
+          <li>Once every mark except the last test is entered, the bottom of the page shows what you need in that test.</li>
+        </ol>
+        <p class="muted small">Everything is saved in this browser automatically. Use <b>Backup</b> to move your marks to another device.</p>
+      </section>
+
+      <section id="moduleView" hidden>
+        <div class="card">
+          <div class="module-header">
+            <input id="moduleName" class="module-name" aria-label="Module name">
+            <button id="deleteModuleBtn" class="btn btn-danger btn-small">Delete module</button>
+          </div>
+          <p id="moduleSource" class="muted small"></p>
+          <p id="weightWarning" class="warning" hidden></p>
+
+          <div class="table-wrap">
+            <table class="assess-table">
+              <thead>
+                <tr>
+                  <th>Assessment</th>
+                  <th class="num">Weight %</th>
+                  <th class="num">Your mark</th>
+                  <th class="num">Counts for</th>
+                  <th class="center" title="The last test of the semester">Final test</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="assessBody"></tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td class="num" id="totalWeight">0</td>
+                  <td></td>
+                  <td class="num" id="totalEarned">0</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div class="table-actions">
+            <button id="addRowBtn" class="btn btn-ghost btn-small">+ Add assessment</button>
+            <button id="addGroupBtn" class="btn btn-ghost btn-small">+ Add group</button>
+          </div>
+          <p class="muted small hint">Type a mark as a percentage (e.g. <b>68</b>) or as a score (e.g. <b>34/50</b>).
+            Use a <b>group</b> when your framework has parts like "Class mark 40%" or "Practical mark" with their own tests inside.</p>
+        </div>
+
+        <!-- Live results -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">Final mark so far</span>
+            <span class="stat-value" id="statFinal">0%</span>
+            <span class="stat-sub" id="statFinalSub">out of 100%</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Average on work done</span>
+            <span class="stat-value" id="statAvg">–</span>
+            <span class="stat-sub" id="statAvgSub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Weight completed</span>
+            <span class="stat-value" id="statDone">0%</span>
+            <div class="progress"><div id="progressBar"></div></div>
+          </div>
+        </div>
+
+        <!-- Needed for final test -->
+        <div id="neededCard" class="card needed">
+          <div class="target-row">
+            <label for="targetInput">Final mark I want:</label>
+            <input id="targetInput" type="number" min="0" max="100" step="1">
+            <span>%</span>
+            <div class="chips">
+              <button class="chip" data-target="50">Pass (50)</button>
+              <button class="chip" data-target="60">60</button>
+              <button class="chip" data-target="75">Distinction (75)</button>
+            </div>
+          </div>
+          <div id="neededResult" class="needed-result"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>
