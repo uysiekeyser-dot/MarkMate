@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mark Calculator</title>
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -39,6 +39,7 @@
       </div>
 
       <button id="addManualBtn" class="btn btn-ghost btn-block">+ Add module manually</button>
+      <button id="aiBtn" class="btn btn-ghost btn-block ai-btn">🤖 AI reader: Off</button>
 
       <div class="side-heading-row">
         <h2 class="side-heading">My modules</h2>
@@ -66,6 +67,7 @@
         <div class="card">
           <div class="module-header">
             <input id="moduleName" class="module-name" aria-label="Module name">
+            <button id="rereadBtn" class="btn btn-ghost btn-small" hidden title="Let the AI read this module's framework again">🤖 Read again with AI</button>
             <button id="deleteModuleBtn" class="btn btn-danger btn-small">Delete module</button>
           </div>
           <div class="module-meta">
@@ -78,7 +80,7 @@
           <details id="rulesBox" class="rules" hidden>
             <summary>Rules from your framework <span id="rulesCount"></span></summary>
             <ul id="rulesList"></ul>
-            <p class="muted small">These are copied from your framework. The calculator doesn't apply them for you: check them yourself, e.g. a sub-minimum for a test.</p>
+            <p class="muted small">These come from your framework. The calculator doesn't apply them for you: check them yourself, e.g. a sub-minimum for a test.</p>
           </details>
 
           <div class="table-wrap">
@@ -150,6 +152,35 @@
     </main>
   </div>
 
-  <script src="app.js?v=5"></script>
+  <!-- AI reader settings -->
+  <dialog id="aiDialog" class="ai-dialog">
+    <h2>🤖 AI reader (Google Gemini)</h2>
+    <p>With the AI reader on, every framework you upload is read by Google's Gemini AI. It understands tables,
+      sentences and rules much better than the built-in reader. It's free with your own key.</p>
+    <ol>
+      <li>Go to <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and sign in with a Google account.</li>
+      <li>Click <b>Create API key</b> and copy the key.</li>
+      <li>Paste it below and click <b>Save</b>.</li>
+    </ol>
+    <label class="field">API key
+      <input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="Paste your key here">
+    </label>
+    <label class="field">Model <span class="muted small">(leave empty for Google's latest free Flash model)</span>
+      <input id="aiModel" spellcheck="false" placeholder="gemini-flash-latest">
+    </label>
+    <p class="muted small">Your key is saved only in this browser and is not included in Backup. The text of each framework
+      you upload is sent to Google. On the free tier Google may use it to improve its products, so don't upload anything private.
+      If the AI can't read a file, the built-in reader is used instead.</p>
+    <p id="aiStatus" class="ai-status small"></p>
+    <div class="dialog-actions">
+      <button type="button" id="aiRemove" class="btn btn-danger btn-small">Turn off and remove key</button>
+      <span class="spacer"></span>
+      <button type="button" id="aiTest" class="btn btn-ghost btn-small">Test key</button>
+      <button type="button" id="aiSave" class="btn btn-primary btn-small">Save</button>
+      <button type="button" id="aiClose" class="btn btn-ghost btn-small">Close</button>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=6"></script>
 </body>
 </html>

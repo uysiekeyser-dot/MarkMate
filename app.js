@@ -35,11 +35,20 @@ function upgradeState(s) {
   return s;
 }
 
+// Framework text kept per module for "Read again with AI" (dropped if the browser runs out of space)
+const SOURCE_TEXT_LIMIT = 80000;
+
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    console.warn("Could not save", e);
+    // Out of space: the saved framework texts are the only thing we can do without
+    try {
+      state.modules.forEach(m => delete m.sourceText);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e2) {
+      console.warn("Could not save", e2);
+    }
   }
 }
 
@@ -756,6 +765,7 @@ const $ = id => document.getElementById(id);
 
 function render() {
   renderModuleList();
+  renderAiState();
   const mod = currentModule();
   $("welcome").hidden = !!mod;
   $("moduleView").hidden = !mod;
@@ -763,7 +773,7 @@ function render() {
 
   $("moduleName").value = mod.name;
   $("moduleSource").textContent = mod.fileName
-    ? `Read from: ${mod.fileName}`
+    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? " · read by AI 🤖" : ""}`
     : "Added manually";
   fillFolderSelect($("moduleFolder"), mod.folderId);
   renderRules(mod);
@@ -1146,26 +1156,185 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
 
+// ---------- AI reader (Google Gemini) ----------
+// Optional: each student uses their own free Gemini API key, kept only in their own browser
+// (not in the backup file). Without a key, or if the AI fails, the built-in reader is used.
+
+const AI_STORAGE_KEY = "markCalc.ai";
+const AI_MODELS = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash-lite"];
+const AI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+
+function loadAi() {
+  try { return JSON.parse(localStorage.getItem(AI_STORAGE_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveAi(settings) {
+  try { localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
+}
+const aiOn = () => !!loadAi().key;
+
+const AI_INSTRUCTIONS = `You read university module frameworks (module outlines / study guides) and work out exactly how the student's final module mark is calculated. Read the whole document: tables, sentences, footnotes and formulas, in English or Afrikaans.
+
+Return JSON only, following the schema. Rules:
+- "assessments": every assessment that counts towards the final mark (tests, exams, assignments, projects, quizzes, tutorials, practicals, reports, participation, etc.). Use the framework's own short name (max 60 characters), with its code if it has one, e.g. "Assessment 1 (A1)" or "Test 2 / A2".
+- If the framework says "two tests (30% each)" or "Tests (2 x 40%)", list each test separately.
+- Groups: if part of the final mark is made of other assessments (e.g. "Class mark 40% = Test 1 40% + Test 2 40% + Tutorials 20%"), return that part in "groups" with "weightOfFinal" = its share of the final mark, and give each assessment inside it "group" = the group's name and "weight" = its percentage OF THE GROUP. Assessments that count directly towards the final mark have "group" = "" and "weight" = their percentage of the final mark. If groups are nested, flatten them: multiply the percentages so every group's weightOfFinal is its share of the final mark.
+- The weightOfFinal of all groups plus the weights of all assessments with no group must add up to 100. The weights inside each group must add up to 100.
+- Assessments that only REPLACE others (A3, supplementary or second-opportunity exams, sick tests, optional make-up tests, re-writes) do not go in "assessments". Put them in "notCounted" with a short reason.
+- Formative work that doesn't count for marks goes nowhere.
+- Exactly one assessment has "isFinal": true: the last main assessment of the semester/year that counts (usually the exam or A2). The student uses it to see what mark they still need.
+- "rules": up to 10 short, clear English sentences about passing: sub-minimums, exam entry requirements, what is needed to pass, how replacement assessments (like A3) work, best-of rules, caps. Translate Afrikaans to English. Don't include rules about attendance, plagiarism, late submission or administration unless they change marks.
+- "moduleName": the module's code and number, e.g. "PP 344" or "Financial Accounting 288".
+- Numbers are plain numbers without % signs. Never invent assessments that are not in the document.`;
+
+const AI_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    moduleName: { type: "STRING" },
+    groups: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { name: { type: "STRING" }, weightOfFinal: { type: "NUMBER" } }, required: ["name", "weightOfFinal"] },
+    },
+    assessments: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          weight: { type: "NUMBER" },
+          group: { type: "STRING" },
+          isFinal: { type: "BOOLEAN" },
+        },
+        required: ["name", "weight", "group", "isFinal"],
+      },
+    },
+    notCounted: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { name: { type: "STRING" }, weight: { type: "NUMBER" }, reason: { type: "STRING" } }, required: ["name", "reason"] },
+    },
+    rules: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  required: ["moduleName", "groups", "assessments", "notCounted", "rules"],
+};
+
+// Sends the framework text to Gemini. Tries the next model if one isn't available.
+async function callGemini(body) {
+  const settings = loadAi();
+  if (!settings.key) throw new Error("No AI key saved.");
+  const models = [...new Set([settings.model, ...AI_MODELS].filter(Boolean))];
+  let lastError = "";
+  for (const model of models) {
+    let res;
+    try {
+      res = await fetch(`${AI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": settings.key },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      throw new Error("Couldn't reach Google. Check your internet connection.");
+    }
+    if (res.ok) return { data: await res.json(), model };
+    const detail = await res.text().catch(() => "");
+    if (res.status === 404) { lastError = `Model "${model}" isn't available.`; continue; }
+    if (res.status === 429) throw new Error("The free AI limit is used up for now. Try again in a minute, or tomorrow.");
+    if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google didn't accept the API key. Check that you copied all of it.");
+    if (res.status === 401 || res.status === 403) throw new Error("Google didn't accept the API key. Check that you copied all of it.");
+    throw new Error(`Google returned an error (${res.status}).`);
+  }
+  throw new Error(lastError || "No AI model is available.");
+}
+
+async function aiRead(text) {
+  const { data, model } = await callGemini({
+    systemInstruction: { parts: [{ text: AI_INSTRUCTIONS }] },
+    contents: [{ role: "user", parts: [{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }] }],
+    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: AI_SCHEMA },
+  });
+  const raw = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  let answer;
+  try { answer = JSON.parse(raw); } catch (e) { throw new Error("The AI's answer couldn't be read."); }
+  const result = fromAiAnswer(answer);
+  result.model = model;
+  return result;
+}
+
+// Turns the AI's answer into this site's modules: groups, assessments, notes and rules
+function fromAiAnswer(answer) {
+  const num = v => parseFloat(String(v ?? "").replace(",", ".")) || 0;
+  const groups = (answer.groups || [])
+    .filter(g => g && String(g.name || "").trim())
+    .map(g => ({ id: uid(), name: String(g.name).trim().slice(0, 70), weight: num(g.weightOfFinal) }));
+  const groupFor = name => {
+    const n = String(name || "").trim();
+    return n ? groups.find(g => norm(g.name) === norm(n)) || groups.find(g => sameName(g.name, n)) : null;
+  };
+  const assessments = (answer.assessments || [])
+    .filter(a => a && String(a.name || "").trim())
+    .map(a => ({
+      id: uid(),
+      name: String(a.name).trim().slice(0, 70),
+      weight: num(a.weight),
+      mark: "",
+      isFinal: !!a.isFinal,
+      groupId: groupFor(a.group)?.id || null,
+    }));
+  if (!assessments.length) throw new Error("The AI didn't find any assessments.");
+
+  const usedGroups = groups.filter(g => assessments.some(a => a.groupId === g.id));
+  // Exactly one final test
+  const finals = assessments.filter(a => a.isFinal);
+  if (finals.length !== 1) markLikelyFinal(assessments, usedGroups);
+
+  const notes = (answer.notCounted || [])
+    .filter(n => n && n.name)
+    .map(n => `${n.name}${num(n.weight) ? ` (${fmt(num(n.weight), 2)}%)` : ""} isn't counted in your final mark here: ${String(n.reason || "").trim()}`);
+  const rules = (answer.rules || []).map(r => String(r).trim()).filter(Boolean).slice(0, 12);
+  return { name: String(answer.moduleName || "").trim().slice(0, 60), groups: usedGroups, assessments, notes, rules };
+}
+
+// Shows whether the AI reader is on, in the sidebar button and on the module page
+function renderAiState() {
+  const on = aiOn();
+  $("aiBtn").textContent = on ? "🤖 AI reader: On" : "🤖 AI reader: Off";
+  $("aiBtn").classList.toggle("on", on);
+  const mod = currentModule();
+  $("rereadBtn").hidden = !(on && mod && mod.sourceText);
+}
+
 // ---------- Actions ----------
 
 async function handleFiles(files) {
   const status = $("uploadStatus");
   let added = 0;
+  const aiProblems = [];
   for (const file of files) {
     status.textContent = `Reading ${file.name}…`;
     try {
       const text = await extractText(file);
-      const parsed = parseFramework(text);
+      let parsed = null;
+      if (aiOn()) {
+        status.textContent = `The AI is reading ${file.name}… (this can take up to a minute)`;
+        try {
+          parsed = await aiRead(text);
+        } catch (err) {
+          console.warn(err);
+          aiProblems.push(`${file.name} (${err.message.replace(/\.$/, "")})`);
+        }
+      }
+      const readBy = parsed ? "ai" : "built-in";
+      if (!parsed) parsed = parseFramework(text);
       const mod = {
         id: uid(),
-        name: guessModuleName(text, file.name),
+        name: parsed.name || guessModuleName(text, file.name),
         fileName: file.name,
+        readBy,
         target: 50,
         folderId: state.uploadFolderId || null,
         groups: parsed.groups,
         assessments: parsed.assessments,
         notes: parsed.notes,
         rules: parsed.rules,
+        sourceText: text.slice(0, SOURCE_TEXT_LIMIT), // kept so the AI can read it again later
       };
       state.modules.push(mod);
       state.selectedId = mod.id;
@@ -1178,9 +1347,36 @@ async function handleFiles(files) {
       return;
     }
   }
-  status.textContent = added ? `Added ${added} module${added > 1 ? "s" : ""}. Check the weights below.` : "";
+  status.textContent = (added ? `Added ${added} module${added > 1 ? "s" : ""}. Check the weights below.` : "") +
+    (aiProblems.length ? ` The AI couldn't read ${aiProblems.join("; ")}. The built-in reader was used instead.` : "");
   saveState();
   render();
+}
+
+// "Read again with AI": replaces the assessments, keeping marks of assessments with the same name
+async function rereadWithAi() {
+  const mod = currentModule();
+  if (!mod || !mod.sourceText) return;
+  if (!confirm(`Let the AI read "${mod.name}" again? Its assessments will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
+  const btn = $("rereadBtn");
+  btn.disabled = true;
+  btn.textContent = "🤖 Reading…";
+  try {
+    const parsed = await aiRead(mod.sourceText);
+    const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
+    parsed.assessments.forEach(a => {
+      const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
+      if (old) a.mark = old.mark;
+    });
+    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy: "ai" });
+    saveState();
+    render();
+  } catch (err) {
+    alert("The AI couldn't read this framework: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🤖 Read again with AI";
+  }
 }
 
 $("fileInput").addEventListener("change", e => {
@@ -1215,6 +1411,51 @@ $("addManualBtn").addEventListener("click", () => {
 });
 
 $("addRowBtn").addEventListener("click", () => addAssessment(currentModule(), null));
+
+// AI reader settings
+const aiDialog = $("aiDialog");
+const aiStatus = (text, kind = "") => { $("aiStatus").textContent = text; $("aiStatus").className = `ai-status small ${kind}`; };
+
+$("aiBtn").addEventListener("click", () => {
+  const s = loadAi();
+  $("aiKey").value = s.key || "";
+  $("aiModel").value = s.model || "";
+  aiStatus(s.key ? "The AI reader is on. New uploads are read by the AI." : "");
+  aiDialog.showModal();
+});
+$("aiClose").addEventListener("click", () => aiDialog.close());
+$("aiSave").addEventListener("click", () => {
+  const key = $("aiKey").value.trim();
+  if (!key) { aiStatus("Paste your API key first.", "bad"); return; }
+  saveAi({ key, model: $("aiModel").value.trim() });
+  renderAiState();
+  aiStatus("Saved. The AI reader is on: new uploads are read by the AI.", "good");
+});
+$("aiRemove").addEventListener("click", () => {
+  try { localStorage.removeItem(AI_STORAGE_KEY); } catch (e) { /* ignore */ }
+  $("aiKey").value = "";
+  $("aiModel").value = "";
+  renderAiState();
+  aiStatus("The AI reader is off and the key is removed from this browser.");
+});
+$("aiTest").addEventListener("click", async () => {
+  const key = $("aiKey").value.trim();
+  if (!key) { aiStatus("Paste your API key first.", "bad"); return; }
+  const before = loadAi();
+  saveAi({ key, model: $("aiModel").value.trim() }); // test exactly what's typed
+  aiStatus("Testing…");
+  try {
+    const { model } = await callGemini({ contents: [{ role: "user", parts: [{ text: "Reply with the word OK." }] }] });
+    aiStatus(`It works! (model: ${model}). Click Save to keep it.`, "good");
+  } catch (err) {
+    aiStatus(err.message, "bad");
+  } finally {
+    if (before.key) saveAi(before); else try { localStorage.removeItem(AI_STORAGE_KEY); } catch (e) { /* ignore */ }
+    renderAiState();
+  }
+});
+
+$("rereadBtn").addEventListener("click", rereadWithAi);
 
 // Folders
 $("addFolderBtn").addEventListener("click", () => {

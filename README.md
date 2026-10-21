@@ -9,7 +9,17 @@ A website where students upload their module frameworks and get a mark calculato
 - When every mark except the final test (e.g. A2) is entered, the bottom of the page shows the percentage you need in that test to reach your goal (50% by default).
 - Everything is saved automatically in your browser. Use **Backup** / **Restore** to move your marks to another device or browser.
 
-Nothing is uploaded to a server: the files are read inside your browser.
+Nothing is uploaded to a server: the files are read inside your browser (unless you turn on the AI reader, below).
+
+## AI reader (optional, free)
+
+The built-in reader handles common framework layouts. For frameworks it gets wrong, turn on the **AI reader**, which sends the framework text to Google's Gemini AI to work out the assessments, weights, groups, final test, replacement assessments (like A3) and pass rules.
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with a Google account and click **Create API key**.
+2. On the site, click **🤖 AI reader**, paste the key, click **Test key** and then **Save**.
+3. Upload frameworks as usual. For modules you uploaded before, open the module and click **🤖 Read again with AI** (your marks are kept).
+
+Each student uses their own key. It's saved only in their own browser and is not included in Backup. The free tier has a daily limit; when it's used up, or if the AI fails, the built-in reader is used instead. On the free tier Google may use the text you send to improve its products, so don't upload anything private. Always check the weights the AI found against your framework.
 
 ## Files
 
