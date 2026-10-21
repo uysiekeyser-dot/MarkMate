@@ -1177,6 +1177,8 @@ const AI_INSTRUCTIONS = `You read university module frameworks (module outlines 
 Return JSON only, following the schema. Rules:
 - "assessments": every assessment that counts towards the final mark (tests, exams, assignments, projects, quizzes, tutorials, practicals, reports, participation, etc.). Use the framework's own short name (max 60 characters), with its code if it has one, e.g. "Assessment 1 (A1)" or "Test 2 / A2".
 - If the framework says "two tests (30% each)" or "Tests (2 x 40%)", list each test separately.
+- If only the best N of M assessments count (e.g. "four tests are written, only the best three (20% each) count"), list only N of them, named like "Class test (best 1)", "Class test (best 2)", and add a rule explaining which ones count. Never list more assessments than actually count, or the weights won't add up.
+- Before answering, add up the weights: they must add up exactly as described below. If they don't, re-read the framework and fix your answer.
 - Groups: if part of the final mark is made of other assessments (e.g. "Class mark 40% = Test 1 40% + Test 2 40% + Tutorials 20%"), return that part in "groups" with "weightOfFinal" = its share of the final mark, and give each assessment inside it "group" = the group's name and "weight" = its percentage OF THE GROUP. Assessments that count directly towards the final mark have "group" = "" and "weight" = their percentage of the final mark. If groups are nested, flatten them: multiply the percentages so every group's weightOfFinal is its share of the final mark.
 - The weightOfFinal of all groups plus the weights of all assessments with no group must add up to 100. The weights inside each group must add up to 100.
 - Assessments that only REPLACE others (A3, supplementary or second-opportunity exams, sick tests, optional make-up tests, re-writes) do not go in "assessments". Put them in "notCounted" with a short reason.
@@ -1271,18 +1273,72 @@ async function callGemini(body, onStatus = () => {}) {
   throw new Error(missing || "No AI model is available.");
 }
 
-async function aiRead(text, onStatus) {
-  const { data, model } = await callGemini({
-    systemInstruction: { parts: [{ text: AI_INSTRUCTIONS }] },
-    contents: [{ role: "user", parts: [{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }] }],
-    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: AI_SCHEMA },
-  }, onStatus);
-  const raw = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-  let answer;
-  try { answer = JSON.parse(raw); } catch (e) { throw new Error("The AI's answer couldn't be read."); }
-  const result = fromAiAnswer(answer);
+// Weights that don't add up: each group's assessments to 100%, and everything to 100% of the final mark
+function weightProblems(groups, assessments) {
+  const problems = [];
+  for (const g of groups) {
+    const inner = assessments.filter(a => a.groupId === g.id).reduce((s, a) => s + a.weight, 0);
+    if (Math.abs(inner - 100) > 0.5) problems.push(`The assessments in the group "${g.name}" add up to ${fmt(inner, 2)}% of the group, not 100%.`);
+  }
+  const total = assessments.reduce((s, a) => s + effectiveWeight({ groups }, a), 0);
+  if (Math.abs(total - 100) > 0.5) problems.push(`Everything adds up to ${fmt(total, 2)}% of the final mark, not 100%.`);
+  return problems;
+}
+
+// Asks the AI to read the framework. If the weights in its answer don't add up,
+// it's told what's wrong and asked once more for a corrected answer.
+async function aiRead(text, onStatus = () => {}) {
+  const framework = { role: "user", parts: [{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }] };
+  const ask = async contents => {
+    const { data, model } = await callGemini({
+      systemInstruction: { parts: [{ text: AI_INSTRUCTIONS }] },
+      contents,
+      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: AI_SCHEMA },
+    }, onStatus);
+    const raw = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+    let answer;
+    try { answer = JSON.parse(raw); } catch (e) { throw new Error("The AI's answer couldn't be read."); }
+    return { result: fromAiAnswer(answer), raw, model };
+  };
+
+  let { result, raw, model } = await ask([framework]);
+  let problems = weightProblems(result.groups, result.assessments);
+  if (problems.length) {
+    onStatus("Checking the AI's answer…");
+    try {
+      const second = await ask([
+        framework,
+        { role: "model", parts: [{ text: raw }] },
+        { role: "user", parts: [{ text: "Your answer has these problems:\n- " + problems.join("\n- ") +
+          "\nRe-read the framework. Look for rules like \"only the best N count\", assessments that only replace others, " +
+          "and percentages of a group versus percentages of the final mark. Return the complete corrected JSON." }] },
+      ]);
+      const secondProblems = weightProblems(second.result.groups, second.result.assessments);
+      if (secondProblems.length <= problems.length) ({ result, model } = second), (problems = secondProblems);
+    } catch (e) {
+      console.warn("AI correction failed", e); // keep the first answer
+    }
+  }
   result.model = model;
+  result.problems = problems;
   return result;
+}
+
+// The AI's reading, unless its weights still don't add up and the built-in reader's do.
+// The AI's rules and notes are kept either way: they're usually clearer.
+function chooseReading(aiResult, text) {
+  if (!aiResult.problems.length) return { parsed: aiResult, readBy: "ai" };
+  const builtIn = parseFramework(text);
+  if (!builtIn.assessments.length || weightProblems(builtIn.groups, builtIn.assessments).length) {
+    return { parsed: aiResult, readBy: "ai" };
+  }
+  builtIn.name = aiResult.name;
+  if (aiResult.rules.length) builtIn.rules = aiResult.rules;
+  builtIn.notes = [
+    ...(aiResult.notes.length ? aiResult.notes : builtIn.notes),
+    "The AI's weights didn't add up, so the built-in reader's weights are used. Check them against your framework.",
+  ];
+  return { parsed: builtIn, readBy: "built-in" };
 }
 
 // Turns the AI's answer into this site's modules: groups, assessments, notes and rules
@@ -1338,17 +1394,16 @@ async function handleFiles(files) {
     status.textContent = `Reading ${file.name}…`;
     try {
       const text = await extractText(file);
-      let parsed = null;
+      let parsed = null, readBy = "built-in";
       if (aiOn()) {
         status.textContent = `The AI is reading ${file.name}… (this can take up to a minute)`;
         try {
-          parsed = await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`));
+          ({ parsed, readBy } = chooseReading(await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`)), text));
         } catch (err) {
           console.warn(err);
           aiProblems.push(`${file.name} (${err.message.replace(/\.$/, "")})`);
         }
       }
-      const readBy = parsed ? "ai" : "built-in";
       if (!parsed) parsed = parseFramework(text);
       const mod = {
         id: uid(),
@@ -1389,13 +1444,13 @@ async function rereadWithAi() {
   btn.disabled = true;
   btn.textContent = "🤖 Reading…";
   try {
-    const parsed = await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg));
+    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg)), mod.sourceText);
     const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
     parsed.assessments.forEach(a => {
       const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
       if (old) a.mark = old.mark;
     });
-    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy: "ai" });
+    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy });
     saveState();
     render();
   } catch (err) {
