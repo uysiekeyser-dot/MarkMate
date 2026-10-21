@@ -168,25 +168,54 @@ function parseFramework(text) {
   let lastLabel = "";
   let group = null;          // group the next rows belong to ("Practical mark" ... "Total 100%")
   let weightColumn = 0;      // lines left in which a bare number at the end of a row is a weight
+  let marksRows = 0;         // lines left in which "Essay questions | 50 | marks" is a part of the group
 
-  const add = (name, weight) => {
+  const startGroup = name => {
+    group = { id: uid(), name: tidy(name.replace(/¦/g, " ")), weight: 0, byMarks: false };
+    groups.push(group);
+    lastLabel = "";
+    marksRows = 12;
+  };
+  const groupTotal = g => found.filter(a => a.groupId === g.id).reduce((s, a) => s + a.weight, 0);
+
+  const add = (name, weight, count = 1) => {
     if (!name || SKIP_NAME.test(name)) return;
     if (/^[a-z]/.test(name)) return; // the rest of a sentence from the line above, not a name
     if (name.split(" ").length > 10) return; // a long sentence, probably not an assessment row
     if (weight === 100 && /total|final|module mark/i.test(name)) return;
-    const key = name.toLowerCase() + "|" + weight + "|" + (group ? group.id : "");
+    // "Class mark 40%" after the class mark's own table: that is the group's weight, not an assessment
+    if (groups.some(g => norm(g.name) === norm(name))) { group = null; addRow(name, weight, null); return; }
+    // "Predikaat (Klaspunt) 100%" heads a group
+    if (weight === 100) { startGroup(name); return; }
+    for (let i = 1; i <= count; i++) addRow(count > 1 ? `${singular(name)} ${i}` : name, weight, group);
+    // A group is complete once its parts add up to 100%
+    if (group && !group.byMarks && groupTotal(group) >= 99.5) group = null;
+  };
+  const addRow = (name, weight, g) => {
+    const key = name.toLowerCase() + "|" + weight + "|" + (g ? g.id : "");
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ id: uid(), name, weight, mark: "", isFinal: false, groupId: group ? group.id : null });
+    found.push({ id: uid(), name, weight, mark: "", isFinal: false, groupId: g ? g.id : null });
   };
 
   for (const line of lines) {
+    const flat = line.replace(/¦/g, " ").replace(/\s+/g, " ").replace(/^[◼■▪●•\s]+/, "").trim();
+
+    // "Tests (2 x 40%) = 80%"  and  "+ (7 x Tut tests) = 20%"
+    const times = flat.match(/^\+?\s*([A-Za-z][A-Za-z ]*?)?\s*\(\s*(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*%\s*\)\s*=?\s*(\d+(?:[.,]\d+)?)?\s*%?$/i);
+    if (times && times[1]) { add(capitalize(tidy(times[1])), parseFloat(times[3].replace(",", ".")), parseInt(times[2], 10)); continue; }
+    const timesNamed = flat.match(/^\+?\s*\(\s*(\d+)\s*x\s*([A-Za-z][A-Za-z ]*?)\s*\)\s*=\s*(\d+(?:[.,]\d+)?)\s*%$/i);
+    if (timesNamed) { add(`${capitalize(tidy(timesNamed[2]))} (${timesNamed[1]})`, parseFloat(timesNamed[3].replace(",", "."))); continue; }
+
+    // "Predikaatpunt: Eksamenpunt 40%:60%"
+    const ratio = flat.match(/^([A-Za-z][A-Za-z ()]*?)\s*:\s*([A-Za-z][A-Za-z ()]*?)\s+(\d{1,3})\s*%?\s*:\s*(\d{1,3})\s*%?\.?$/);
+    if (ratio) { addRatio(equations, ratio[1], ratio[2], ratio[3], ratio[4]); continue; }
+
+    if (/^total\b/i.test(flat)) { group = null; lastLabel = ""; continue; }
     if (line.includes("=")) { collectEquations(line, equations); continue; }
 
     const matches = [...line.matchAll(PCT)];
     const hasLetters = /[a-z]/i.test(line.replace(PCT, ""));
-
-    if (/^total\b/i.test(line)) { group = null; lastLabel = ""; continue; }
 
     if (!matches.length) {
       if (WEIGHT_HEADER.test(line) && line.includes("¦")) { weightColumn = 15; continue; }
@@ -198,16 +227,38 @@ function parseFramework(text) {
       }
       weightColumn--;
 
-      if (hasLetters && isGroupHeader(line)) {
-        group = { id: uid(), name: tidy(line.replace(/¦/g, " ")), weight: 0 };
-        groups.push(group);
-        lastLabel = "";
-        continue;
+      // Inside a group, parts given in marks: "Longer essay type questions | 50 | marks"
+      const marks = group && marksRows > 0 && flat.match(/^(?:(.*[A-Za-z].*?)\s+)?(\d{1,3})\s*marks$/i);
+      if (marks) {
+        const name = marks[1] ? cleanName(line.replace(/¦?\s*\d{1,3}\s*¦?\s*marks\s*$/i, "")) : cleanName(lastLabel);
+        if (name && !/^[a-z]/.test(name)) {
+          group.byMarks = true;
+          addRow(name, parseInt(marks[2], 10), group);
+          lastLabel = "";
+          marksRows = 12;
+          continue;
+        }
       }
+      marksRows--;
+
+      if (hasLetters && isGroupHeader(line)) { startGroup(line); continue; }
       // Remember short text lines: in Word tables the name and weight are often on separate lines
       if (hasLetters && line.length <= 80) lastLabel = line;
       continue;
     }
+
+    // "Twee klastoetse (30% elk) 60%": several assessments with the same weight
+    const each = flat.match(/^([A-Za-z][A-Za-z ]*?)\s*\(\s*(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:each|elk)\s*\)/i);
+    if (each && !SKIP_LINE.test(flat)) {
+      const { count, name } = splitCount(each[1]);
+      const w = parseFloat(each[2].replace(",", "."));
+      const total = flat.slice(each[0].length).match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+      const n = count || (total ? Math.round(parseFloat(total[1].replace(",", ".")) / w) : 1);
+      add(capitalize(tidy(name)), w, n);
+      lastLabel = "";
+      continue;
+    }
+
     // In a table, the weight has a column of its own; a percentage inside a long text cell is prose
     const pctCell = line.split("¦").find(c => /\d\s*%/.test(c)) || "";
     // Check the name and weight for rules, but not a comments column after the weight:
@@ -227,8 +278,11 @@ function parseFramework(text) {
     lastLabel = "";
   }
 
+  // Weights written out in sentences (frameworks without a table)
+  readSentences(lines.map(l => l.replace(/¦/g, " ")).join(" ").replace(/\s+/g, " "), found, groups, equations);
+
   const usedGroups = settleGroups(found, groups, equations, lines);
-  markLikelyFinal(found);
+  markLikelyFinal(found, usedGroups);
   return { assessments: found, groups: usedGroups };
 }
 
@@ -238,30 +292,121 @@ function isGroupHeader(line) {
   return /\b(mark|punt)\b/i.test(line) && words.length <= 5;
 }
 
+const COUNT_WORDS = { a: 1, an: 1, one: 1, een: 1, two: 2, twee: 2, three: 3, drie: 3, four: 4, vier: 4,
+  five: 5, vyf: 5, six: 6, ses: 6, seven: 7, sewe: 7, eight: 8, agt: 8 };
+
+// "three class tests" -> { count: 3, name: "class tests" }
+function splitCount(s) {
+  const m = s.trim().match(/^(\w+)\s+(.+)$/);
+  if (m) {
+    const n = COUNT_WORDS[m[1].toLowerCase()] || (/^\d+$/.test(m[1]) ? parseInt(m[1], 10) : 0);
+    if (n) return { count: n, name: m[2] };
+  }
+  return { count: 0, name: s.trim() };
+}
+
+// "class tests" -> "Class test", "klastoetse" -> "Klastoets"
+function singular(name) {
+  const t = name.trim();
+  const s = /toetse$/i.test(t) ? t.replace(/toetse$/i, "toets") : t.replace(/([^s])s$/i, "$1");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Same thing, loosely: "Predikaatpunt" and "Predikaat (Klaspunt)", "class mark" and "Class Mark"
+function sameName(a, b) {
+  const na = norm(a), nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const [short, long] = na.split(" ").length <= nb.split(" ").length ? [na, nb] : [nb, na];
+  const longWords = long.split(" ");
+  return short.split(" ").every(w => longWords.some(l =>
+    l === w || (w.length >= 4 && l.length >= 4 && (l.startsWith(w) || w.startsWith(l)))));
+}
+
+// "Predikaatpunt : Eksamenpunt 40% : 60%" -> final = 40% predikaat + 60% eksamen
+function addRatio(equations, a, b, pa, pb) {
+  const x = parseFloat(pa), y = parseFloat(pb);
+  if (Math.abs(x + y - 100) > 0.5 || equations.some(e => e.lhs === "final")) return;
+  equations.push({ lhs: "final", terms: [
+    { pct: x, raw: a.trim(), key: norm(a) },
+    { pct: y, raw: b.trim(), key: norm(b) },
+  ] });
+}
+
+// Frameworks that explain the weights in sentences instead of a table
+function readSentences(text, found, groups, equations) {
+  // "The final mark is determined by 40:60 of the class mark and the examination mark."
+  const ratio = text.match(/\b(?:final (?:module )?mark|finale (?:module ?)?punt|module mark)\b[^.]{0,60}?\b(\d{1,3})\s*%?\s*:\s*(\d{1,3})\s*%?\s+(?:of\s+)?(?:the\s+|die\s+)?([A-Za-z][A-Za-z ]{2,40}?)\s+(?:and|en)\s+(?:the\s+|die\s+)?([A-Za-z][A-Za-z ]{2,40}?)\s*[.,;]/i);
+  if (ratio) addRatio(equations, ratio[3], ratio[4], ratio[1], ratio[2]);
+
+  // "The class mark will be made up of three class tests (20% each), one written assignment (20%) and ..."
+  const re = /\b((?:[A-Za-z]+\s+){0,2}?(?:mark|punt))\s+(?:will\s+be\s+|is\s+)?(?:made up of|consists? of|comprises?|composed of|bestaan uit)\s+([^.]{5,300}?%[^.]*?)\./gi;
+  for (const m of text.matchAll(re)) {
+    const name = capitalize(m[1].replace(/^the\s+/i, "").trim());
+    if (groups.some(g => norm(g.name) === norm(name))) continue;
+    const rows = [];
+    for (const item of m[2].split(/,\s*|\s+and\s+|\s+en\s+/)) {
+      const im = item.match(/^\s*(.+?)\s*\(\s*(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:each|elk)?\s*\)/i);
+      if (!im) continue;
+      const { count, name: itemName } = splitCount(im[1]);
+      const w = parseFloat(im[2].replace(",", "."));
+      const n = count || 1;
+      for (let i = 1; i <= n; i++) rows.push({ name: n > 1 ? `${singular(itemName)} ${i}` : capitalize(itemName.trim()), weight: w });
+    }
+    if (Math.abs(rows.reduce((s, r) => s + r.weight, 0) - 100) > 0.5) continue;
+    const g = { id: uid(), name, weight: 0, byMarks: false };
+    groups.push(g);
+    rows.forEach(r => found.push({ id: uid(), name: tidy(r.name), weight: r.weight, mark: "", isFinal: false, groupId: g.id }));
+  }
+}
+
 // Keep only real groups (2+ rows adding up to 100% of the group) and work out what
-// each group counts towards the final mark from formulas in the framework.
+// each group counts towards the final mark.
 function settleGroups(found, groups, equations, lines) {
   const rowsOf = g => found.filter(a => a.groupId === g.id);
-  let real = groups.filter(g => {
+  const round = n => Math.round(n * 10000) / 10000;
+
+  // Parts given in marks (100 + 50 + 50 marks) become percentages of the group
+  for (const g of groups.filter(g => g.byMarks)) {
+    const rows = rowsOf(g);
+    const total = rows.reduce((s, a) => s + a.weight, 0);
+    if (total > 0) rows.forEach(a => (a.weight = round((a.weight / total) * 100)));
+  }
+
+  const real = groups.filter(g => {
     const rows = rowsOf(g);
     const total = rows.reduce((s, a) => s + a.weight, 0);
     const ok = rows.length >= 2 && Math.abs(total - 100) < 0.5;
     if (!ok) rows.forEach(a => (a.groupId = null));
     return ok;
   });
+  real.forEach(g => delete g.byMarks);
 
-  // Weights already add up to 100% of the final mark: no groups needed
-  const flatTotal = found.reduce((s, a) => s + a.weight, 0);
-  if (!real.length || Math.abs(flatTotal - 100) < 0.5) {
-    found.forEach(a => (a.groupId = null));
-    return [];
+  // "Class mark (Coursework) 40%" listed on its own gives the group's weight
+  for (const g of real) {
+    const row = found.find(a => !a.groupId && norm(a.name) === norm(g.name));
+    if (row) { g.weight = row.weight; found.splice(found.indexOf(row), 1); }
   }
 
-  const resolved = resolveEquations(equations, real, found, lines);
-  if (resolved) {
-    real.forEach(g => (g.weight = resolved.groupWeights[g.id]));
-    resolved.rowWeights.forEach(([a, w]) => (a.weight = w));
-    found.push(...resolved.extra);
+  // Otherwise, formulas such as "Final module mark = 40% class mark + 60% theory exam mark"
+  if (real.some(g => !g.weight)) {
+    const resolved = resolveEquations(equations, real, found, lines);
+    if (resolved) {
+      real.forEach(g => { if (!g.weight) g.weight = resolved.groupWeights[g.id]; });
+      resolved.rowWeights.forEach(([a, w]) => (a.weight = w));
+      found.push(...resolved.extra);
+    }
+  }
+
+  // No group weights anywhere and the rows already add up to 100%: no groups needed
+  if (!real.some(g => g.weight > 0)) {
+    const flatTotal = found.reduce((s, a) => s + a.weight, 0);
+    if (!real.length || Math.abs(flatTotal - 100) < 0.5) {
+      found.forEach(a => (a.groupId = null));
+      return [];
+    }
   }
   return real;
 }
@@ -296,7 +441,7 @@ function resolveEquations(equations, groups, found, lines) {
       eq.terms.forEach(t => expand(t.key, t.raw, (factor * t.pct) / 100, depth + 1));
       return;
     }
-    const g = groups.find(g => norm(g.name) === key);
+    const g = groups.find(g => norm(g.name) === key) || groups.find(g => sameName(g.name, raw || key));
     if (g) { groupWeights[g.id] = round(factor * 100); return; }
     const a = found.find(a => !a.groupId && norm(a.name) === key);
     if (a) { rowWeights.push([a, round(factor * 100)]); return; }
@@ -305,13 +450,13 @@ function resolveEquations(equations, groups, found, lines) {
   };
   expand(root.lhs, "", 1, 0);
 
-  if (groups.some(g => !groupWeights[g.id])) return null;
+  if (groups.some(g => !g.weight && !groupWeights[g.id])) return null;
   return { groupWeights, rowWeights, extra };
 }
 
 // "theory exam mark" -> "Theory exam (A2)" when the framework says "Theory exam mark (A2 assessment)"
 function nameFromFormula(raw, lines) {
-  let name = raw.replace(/\bmarks?\b/i, "").trim();
+  let name = raw.replace(/\bmarks?\b/i, "").replace(/(\w{3,})punt\b/i, "$1").trim();
   name = name.charAt(0).toUpperCase() + name.slice(1);
   const re = new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\(\\s*(A\\d+(?:\\.\\d+)?)", "i");
   for (const l of lines) {
@@ -323,8 +468,9 @@ function nameFromFormula(raw, lines) {
 
 function norm(s) {
   return String(s).toLowerCase()
-    .replace(/[^a-z ]/g, " ")
-    .replace(/\b(mark|marks|the)\b/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\b(mark|marks|the|punt|punte)\b/g, " ")
+    .replace(/\b([a-z]{3,})punt\b/g, "$1")   // Afrikaans "klaspunt" = class mark
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -332,13 +478,23 @@ function norm(s) {
 // In a table row, the name is the first column with words in it. An assessment code
 // column next to it (A1, A1.2, A2 ...) is kept, other columns (dates, venues) are dropped.
 function cleanName(s) {
+  // Some PDFs put every word in its own column: "Class | mark | (Coursework) | 40%"
+  const beforeWeight = s.split("¦").map(c => c.trim()).filter(Boolean);
+  const pctAt = beforeWeight.findIndex(c => /\d\s*%/.test(c));
+  const lead = pctAt > 0 ? beforeWeight.slice(0, pctAt) : [];
+  if (lead.length >= 2 && lead.every(c => !/\s/.test(c) && /[a-z]/i.test(c))) return tidy(lead.join(" "));
+
   const cells = s.replace(PCT, " ").split("¦").map(c => c.trim()).filter(Boolean);
   const first = cells.findIndex(c => /[a-z]/i.test(c));
   if (first === -1) return "";
   let name = cells[first];
   // Bilingual names: "Test 1 / Toets 1" -> "Test 1"
   const halves = name.split(/\s*\/\s*/);
-  if (halves.length === 2 && halves.every(h => /[a-z]{2}/i.test(h))) name = halves[0];
+  if (halves.length === 2 && halves.every(h => /[a-z]{2}/i.test(h))) {
+    // "Test/Toets 1": the number is only written once, after the Afrikaans
+    const num = !/\d/.test(halves[0]) && halves[1].match(/\s(\d+(?:\.\d+)?)\s*$/);
+    name = halves[0] + (num ? " " + num[1] : "");
+  }
   const code = cells.slice(first + 1).find(c => /^A\d+(\.\d+)?\.?$/i.test(c));
   if (code && !name.includes(code.replace(/\.$/, ""))) name += ` (${code.replace(/\.$/, "")})`;
   return tidy(name);
@@ -355,15 +511,18 @@ function tidy(s) {
 }
 
 // The last test of the semester: prefer A2 / exam / final, otherwise the last row
-function markLikelyFinal(list) {
+function markLikelyFinal(list, groups = []) {
   if (!list.length) return;
   list.forEach(a => (a.isFinal = false));
-  const order = [/\bA2\b/i, /exam/i, /\bfinal\b/i, /summative/i];
+  const share = a => effectiveWeight({ groups }, a);
+  const order = [/\bA2\b/i, /exam|eksamen/i, /\bfinal\b/i, /summative/i];
+  const groupName = a => ((a.groupId && groups.find(g => g.id === a.groupId)) || {}).name || "";
   for (const re of order) {
-    const hits = list.filter(a => re.test(a.name));
+    // An assessment called "Exam", or one inside a group called "Exam mark"
+    const hits = list.filter(a => re.test(a.name) || re.test(groupName(a)));
     if (hits.length) {
-      // Prefer the one that counts most (the theory exam over a practical exam)
-      hits.sort((a, b) => b.weight - a.weight);
+      // Prefer the one that counts most of the final mark (the theory exam over a practical exam)
+      hits.sort((a, b) => share(b) - share(a));
       hits[0].isFinal = true;
       return;
     }
