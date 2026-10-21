@@ -251,6 +251,44 @@ body {
 }
 .link-btn:hover { text-decoration: underline; }
 .table-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Key dates (sidebar) */
+.key-dates { margin-top: 8px; }
+.key-dates[hidden] { display: none; }
+.key-dates .side-heading { margin-bottom: 2px; }
+.key-dates-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.key-dates-list[hidden] { display: none; }
+.key-dates-list li > button {
+  width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  text-align: left; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+}
+.key-dates-list li > button:hover { border-color: var(--primary); }
+.kd-what { display: flex; flex-direction: column; min-width: 0; }
+.kd-label { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-module { font-size: 0.75rem; color: var(--muted); }
+.key-dates-list time { font-size: 0.8rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.key-dates-list li.soon time { color: var(--warn); font-weight: 700; }
+.key-dates-list li.today > button { border-color: var(--bad); background: var(--bad-soft); }
+.key-dates-list li.today time { color: var(--bad); font-weight: 700; }
+.key-dates-list li.past > button { opacity: 0.6; }
+.past-list { margin-top: 6px; }
+.key-dates .link-btn { display: block; margin-top: 6px; }
+.key-dates .link-btn[hidden] { display: none; }
+
+/* Key dates (module page) */
+.dates-edit { list-style: none !important; padding-left: 0 !important; display: flex; flex-direction: column; gap: 6px; }
+.dates-edit li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 !important; }
+.dates-edit input {
+  font: inherit; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); color: var(--text);
+}
+.dates-edit .de-label { flex: 1; min-width: 140px; }
+.dates-edit .de-count { min-width: 70px; }
+.dates-edit .del {
+  border: none; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 4px 8px; border-radius: 6px;
+}
+.dates-edit .del:hover { color: var(--bad); background: var(--bad-soft); }
+
 /* AI reader */
 .ai-btn.on { border-color: var(--good); color: var(--good); background: var(--good-soft); }
 .ai-dialog {

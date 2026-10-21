@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mark Calculator</title>
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -48,6 +48,16 @@
       <ul id="moduleList" class="module-list"></ul>
       <p id="dragHint" class="muted small" hidden>Drag a module onto a folder to move it there.</p>
       <p id="noModules" class="muted small">No modules yet. Upload a module framework to start.</p>
+
+      <section id="keyDates" class="key-dates" hidden>
+        <h2 class="side-heading">Key dates</h2>
+        <p id="keyDatesToday" class="muted small"></p>
+        <ul id="keyDatesList" class="key-dates-list"></ul>
+        <p id="keyDatesEmpty" class="muted small" hidden>No upcoming dates.</p>
+        <button id="moreDatesBtn" class="link-btn" hidden></button>
+        <button id="pastDatesBtn" class="link-btn" hidden></button>
+        <ul id="pastDatesList" class="key-dates-list past-list" hidden></ul>
+      </section>
     </aside>
 
     <!-- Main: selected module -->
@@ -81,6 +91,12 @@
             <summary>Rules from your framework <span id="rulesCount"></span></summary>
             <ul id="rulesList"></ul>
             <p class="muted small">These come from your framework. The calculator doesn't apply them for you: check them yourself, e.g. a sub-minimum for a test.</p>
+          </details>
+          <details id="datesBox" class="rules dates-box">
+            <summary>Key dates <span id="datesCount"></span></summary>
+            <ul id="datesEdit" class="dates-edit"></ul>
+            <button id="addDateBtn" class="link-btn">+ Add date</button>
+            <p class="muted small">Found in your framework. Fix or add dates here: they show under <b>Key dates</b> in the sidebar.</p>
           </details>
 
           <div class="table-wrap">
@@ -181,6 +197,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

@@ -184,6 +184,9 @@ function parseFramework(text) {
   const groups = [];
   const equations = [];
   const seen = new Set();
+  const year = frameworkYear(text);
+  const dates = [];          // { label, date } found in assessment rows
+  let rowContext = {};       // the current line and the lines above it, to find a row's date
   let recent = [];
   let group = null;          // group the next rows belong to ("Practical mark" ... "Total 100%")
   let weightColumn = 0;      // lines left in which a bare number at the end of a row is a weight
@@ -215,9 +218,13 @@ function parseFramework(text) {
     if (seen.has(key)) return;
     seen.add(key);
     found.push({ id: uid(), name, weight, mark: "", isFinal: false, groupId: g ? g.id : null });
+    // The row's own line first; the lines above it only for tables with one cell per line
+    const d = findDate(rowContext.line, year) || findDate(rowContext.above, year);
+    if (d) dates.push({ label: name, date: d.iso });
   };
 
   for (const line of lines) {
+    rowContext = { line, above: recent.join(" ¦ ") };
     const flat = line.replace(/¦/g, " ").replace(/\s+/g, " ").replace(/^[◼■▪●•\s]+/, "").trim();
 
     // "Tests (2 x 40%) = 80%"  and  "+ (7 x Tut tests) = 20%"
@@ -310,7 +317,98 @@ function parseFramework(text) {
   const ruleLines = text.split(/\r?\n/)
     .map(l => l.replace(/https?:\/\/\S+|www\.\S+/gi, " ").replace(/^[ \t]+|[ \t]+$/g, ""))
     .filter(l => l.replace(PARA_END, "").trim());
-  return { assessments: found, groups: usedGroups, notes, rules: findRules(ruleLines) };
+  return { assessments: found, groups: usedGroups, notes, rules: findRules(ruleLines), dates: collectDates(lines, dates, year) };
+}
+
+// ---------- Key dates ----------
+
+const MONTHS = {
+  jan: 1, january: 1, januarie: 1, feb: 2, february: 2, februarie: 2, mar: 3, march: 3, maart: 3,
+  apr: 4, april: 4, may: 5, mei: 5, jun: 6, june: 6, junie: 6, jul: 7, july: 7, julie: 7,
+  aug: 8, august: 8, augustus: 8, sep: 9, sept: 9, september: 9, oct: 10, okt: 10, october: 10, oktober: 10,
+  nov: 11, november: 11, dec: 12, des: 12, december: 12, desember: 12,
+};
+
+// The year the framework is for: the year mentioned most often (else this year)
+function frameworkYear(text) {
+  const counts = {};
+  for (const m of text.matchAll(/\b(20\d{2})\b/g)) counts[m[1]] = (counts[m[1]] || 0) + 1;
+  const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return best ? Number(best[0]) : new Date().getFullYear();
+}
+
+function isoDate(y, m, d) {
+  y = Number(y); m = Number(m); d = Number(d);
+  if (y < 100) y += 2000;
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+// The first date in a piece of text: "31 August", "07 April 2026", "October 2", "17/08/2026", "2026-11-13"
+function findDate(s, year) {
+  s = String(s).replace(/¦/g, " ");
+  const tries = [
+    [/\b(20\d{2})-(\d{2})-(\d{2})\b/, m => isoDate(m[1], m[2], m[3])],
+    [/\b(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/, m => isoDate(m[3], m[2], m[1])],
+    [/\b(\d{1,2})(?:st|nd|rd|th)?\s*-?\s*([A-Za-z]{3,10})\.?,?(?:\s+(20\d{2}))?(?![\w])/, m => MONTHS[m[2].toLowerCase()] && isoDate(m[3] || year, MONTHS[m[2].toLowerCase()], m[1])],
+    [/\b([A-Za-z]{3,10})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*[:h%])(?:,?\s+(20\d{2}))?/, m => MONTHS[m[1].toLowerCase()] && isoDate(m[3] || year, MONTHS[m[1].toLowerCase()], m[2])],
+  ];
+  let best = null;
+  for (const [re, make] of tries) {
+    for (const m of s.matchAll(new RegExp(re.source, "gi"))) {
+      const iso = make(m);
+      if (iso && (!best || m.index < best.index)) { best = { iso, index: m.index }; break; }
+    }
+  }
+  return best;
+}
+
+// Dates of assessments from the rows, plus lines like "Practical test: Thursday 15 October, 14h00"
+// or "First opportunity – 14/11/2026", or a schedule row "Fri, 21 Aug | TEST | ASSESSMENT A1.1".
+const NOT_A_DATE_LINE = /(updated|opgedateer|maintenance|version|weergawe|copyright|holiday|vakansie|class free|follows a|consultation|published|printed|\bgeen\b)/i;
+const DATE_LABEL_WORD = /(opportunit|geleentheid|due|deadline|submission|inhandig|closes)/i;
+// Class sessions in a schedule, not assessments: "NO PRACTICALS", "TUTORIAL 1 GROUP 3A", "Test review in class"
+const SESSION_LABEL = /\b(no|review|introduction|handing out|uitdeel|lecture|lesing|demo)\b|\bgroups?\s*\d|tutorial$/i;
+const isSessionLabel = label =>
+  SESSION_LABEL.test(label) || (/\b(tutorials?|practicals?|praktika)\b/i.test(label) && !/\b(test|quiz|toets|assessment|exam|report|due)\b/i.test(label));
+
+function collectDates(lines, rowDates, year) {
+  const out = [...rowDates];
+  const has = iso => out.some(d => d.date === iso);
+  for (const line of lines) {
+    if (NOT_A_DATE_LINE.test(line)) continue;
+    const flat = line.replace(/¦/g, " ").replace(/\s+/g, " ").replace(/^[◼■▪●•\s]+/, "").trim();
+    const d = findDate(flat, year);
+    if (!d || has(d.iso)) continue;
+    // "Practical test: Thursday 15 October" -> "Practical test"
+    let label = flat.slice(0, d.index)
+      .replace(/\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s*$/i, "")
+      .replace(/\b(date|datum|on|op)\s*$/i, "")
+      .replace(/[\s:–—\-,@(]+$/, "").trim();
+    if (!(label && label.split(" ").length <= 8 && (ASSESSMENT_WORD.test(label) || DATE_LABEL_WORD.test(label)))) {
+      // A schedule row: the short cell that names an assessment
+      const cell = line.split("¦").map(c => c.trim())
+        .filter(c => c.split(/\s+/).length <= 6 && (ASSESSMENT_WORD.test(c) || /\bA\d(\.\d)?\b/.test(c)) && !findDate(c, year))
+        .sort((a, b) => /\bA\d/.test(b) - /\bA\d/.test(a))[0];
+      label = cell || "";
+    } else if (line.includes("¦")) {
+      // In a table row, just the cell that names the assessment ("Reflection", not its description)
+      const cell = line.split("¦").map(c => c.trim())
+        .find(c => (ASSESSMENT_WORD.test(c) || DATE_LABEL_WORD.test(c)) && !findDate(c, year));
+      if (cell && cell.split(/\s+/).length <= 8) label = cell;
+    }
+    label = tidy(label.replace(/\bdue\s*date\b/i, "due"));
+    if (!label || label.length < 3 || isSessionLabel(label)) continue;
+    // "First opportunity" on its own is an exam date
+    if (/^(first|second|third|1st|2nd|3rd|\d)\s*(exam\s*)?opportunit/i.test(label)) label = `Exam, ${label.toLowerCase()}`;
+    out.push({ label: capitalize(label), date: d.iso });
+  }
+  return out
+    .filter((d, i) => out.findIndex(x => x.date === d.date) === i) // one event per day
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 25)
+    .map(d => ({ id: uid(), label: d.label.slice(0, 60), date: d.date }));
 }
 
 // Words that show a line is an assessment's name, and lines that are only a date or a time
@@ -765,6 +863,7 @@ const $ = id => document.getElementById(id);
 
 function render() {
   renderModuleList();
+  renderKeyDates();
   renderAiState();
   const mod = currentModule();
   $("welcome").hidden = !!mod;
@@ -777,9 +876,108 @@ function render() {
     : "Added manually";
   fillFolderSelect($("moduleFolder"), mod.folderId);
   renderRules(mod);
+  renderDatesEditor(mod);
   $("targetInput").value = mod.target;
   renderTable(mod);
   updateResults();
+}
+
+// ---- Key dates: the sidebar list of every module's dates, counting down to each ----
+
+let showPastDates = false;
+let showAllUpcoming = false;
+const UPCOMING_SHOWN = 8; // the rest behind "Show more"
+
+const todayIso = () => {
+  const t = new Date();
+  return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
+};
+const daysUntil = iso => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
+};
+const shortDate = iso => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
+};
+const countdown = days =>
+  days < 0 ? "done" : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+
+function renderKeyDates() {
+  const all = state.modules.flatMap(m => (m.dates || []).filter(d => d.date).map(d => ({ ...d, mod: m, days: daysUntil(d.date) })));
+  $("keyDates").hidden = !all.length;
+  if (!all.length) return;
+  $("keyDatesToday").textContent = "Today: " + new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
+
+  const upcoming = all.filter(d => d.days >= 0).sort((a, b) => a.days - b.days || a.label.localeCompare(b.label));
+  const past = all.filter(d => d.days < 0).sort((a, b) => b.days - a.days);
+  const item = d => {
+    const li = document.createElement("li");
+    li.className = d.days < 0 ? "past" : d.days === 0 ? "today" : d.days <= 7 ? "soon" : "";
+    li.innerHTML = `<button><span class="kd-what"><span class="kd-label"></span><span class="kd-module"></span></span>
+      <time></time></button>`;
+    li.querySelector(".kd-label").textContent = d.label;
+    li.querySelector(".kd-module").textContent = d.mod.name || "Untitled module";
+    const time = li.querySelector("time");
+    time.dateTime = d.date;
+    time.textContent = `${shortDate(d.date)} · ${countdown(d.days)}`;
+    li.querySelector("button").addEventListener("click", () => {
+      state.selectedId = d.mod.id;
+      saveState();
+      render();
+      const box = $("datesBox");
+      if (box) box.open = true;
+    });
+    return li;
+  };
+  const shown = showAllUpcoming ? upcoming : upcoming.slice(0, UPCOMING_SHOWN);
+  $("keyDatesList").replaceChildren(...shown.map(item));
+  $("keyDatesEmpty").hidden = upcoming.length > 0;
+  $("moreDatesBtn").hidden = upcoming.length <= UPCOMING_SHOWN;
+  $("moreDatesBtn").textContent = showAllUpcoming ? "Show fewer" : `Show ${upcoming.length - UPCOMING_SHOWN} more`;
+  $("pastDatesBtn").hidden = !past.length;
+  $("pastDatesBtn").textContent = showPastDates ? "Hide past dates" : `Show past dates (${past.length})`;
+  $("pastDatesList").hidden = !showPastDates;
+  $("pastDatesList").replaceChildren(...(showPastDates ? past.map(item) : []));
+}
+
+// The countdown follows the calendar: redraw when the day changes or the page is shown again
+let keyDatesDay = todayIso();
+const refreshKeyDatesIfNewDay = () => {
+  if (todayIso() !== keyDatesDay) { keyDatesDay = todayIso(); renderKeyDates(); }
+};
+setInterval(refreshKeyDatesIfNewDay, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshKeyDatesIfNewDay(); });
+
+// The module page's own list of dates, to fix or add dates
+function renderDatesEditor(mod) {
+  mod.dates = mod.dates || [];
+  $("datesCount").textContent = mod.dates.length ? `(${mod.dates.length})` : "";
+  const list = $("datesEdit");
+  list.replaceChildren(...mod.dates.map(d => {
+    const li = document.createElement("li");
+    li.innerHTML = `<input type="text" class="de-label" aria-label="What" placeholder="e.g. Test 1">
+      <input type="date" class="de-date" aria-label="Date">
+      <span class="de-count muted small"></span>
+      <button class="del" title="Remove date">✕</button>`;
+    const label = li.querySelector(".de-label");
+    const date = li.querySelector(".de-date");
+    const count = li.querySelector(".de-count");
+    const showCount = () => (count.textContent = d.date ? countdown(daysUntil(d.date)) : "");
+    label.value = d.label;
+    date.value = d.date || "";
+    showCount();
+    label.addEventListener("input", () => { d.label = label.value; saveState(); renderKeyDates(); });
+    date.addEventListener("change", () => { d.date = date.value; showCount(); saveState(); renderKeyDates(); });
+    li.querySelector(".del").addEventListener("click", () => {
+      mod.dates = mod.dates.filter(x => x.id !== d.id);
+      saveState();
+      renderDatesEditor(mod);
+      renderKeyDates();
+    });
+    return li;
+  }));
 }
 
 // Notes about how the framework was read, and the pass rules found in it
@@ -1219,6 +1417,7 @@ Return JSON only, following the schema. Rules:
 - Formative work that doesn't count for marks goes nowhere.
 - Exactly one assessment has "isFinal": true: the last main assessment of the semester/year that counts (usually the exam or A2). The student uses it to see what mark they still need.
 - "rules": up to 10 short, clear English sentences about passing: sub-minimums, exam entry requirements, what is needed to pass, how replacement assessments (like A3) work, best-of rules, caps. Translate Afrikaans to English. Don't include rules about attendance, plagiarism, late submission or administration unless they change marks.
+- "keyDates": every dated assessment event: each test, each exam opportunity (including A2, A3 and supplementary exams), and the due date of each assignment, project, report or other submission. "name" is short (e.g. "Test 1", "Project due", "Exam, first opportunity"), "date" is YYYY-MM-DD. If the year isn't written, use the academic year the framework is for. Leave out lectures, practical or tutorial sessions, holidays, IT maintenance and the date the document was updated. Dates that are "TBA" or "to be confirmed" are left out.
 - "moduleName": the module's code and number, e.g. "PP 344" or "Financial Accounting 288".
 - Numbers are plain numbers without % signs. Never invent assessments that are not in the document.`;
 
@@ -1248,8 +1447,12 @@ const AI_SCHEMA = {
       items: { type: "OBJECT", properties: { name: { type: "STRING" }, weight: { type: "NUMBER" }, reason: { type: "STRING" } }, required: ["name", "reason"] },
     },
     rules: { type: "ARRAY", items: { type: "STRING" } },
+    keyDates: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { name: { type: "STRING" }, date: { type: "STRING" } }, required: ["name", "date"] },
+    },
   },
-  required: ["moduleName", "groups", "assessments", "notCounted", "rules"],
+  required: ["moduleName", "groups", "assessments", "notCounted", "rules", "keyDates"],
 };
 
 // Sends the framework text to Gemini. Tries the next model if one isn't available.
@@ -1403,6 +1606,7 @@ function chooseReading(aiResult, text) {
   }
   builtIn.name = aiResult.name;
   if (aiResult.rules.length) builtIn.rules = aiResult.rules;
+  if (aiResult.dates.length) builtIn.dates = aiResult.dates;
   builtIn.notes = [
     ...(aiResult.notes.length ? aiResult.notes : builtIn.notes),
     "The AI's weights didn't add up, so the built-in reader's weights are used. Check them against your framework.",
@@ -1441,7 +1645,16 @@ function fromAiAnswer(answer) {
     .filter(n => n && n.name)
     .map(n => `${n.name}${num(n.weight) ? ` (${fmt(num(n.weight), 2)}%)` : ""} isn't counted in your final mark here: ${String(n.reason || "").trim()}`);
   const rules = (answer.rules || []).map(r => String(r).trim()).filter(Boolean).slice(0, 12);
-  return { name: String(answer.moduleName || "").trim().slice(0, 60), groups: usedGroups, assessments, notes, rules };
+  const dates = (answer.keyDates || [])
+    .map(d => {
+      const m = String(d?.date || "").match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      const iso = m && isoDate(m[1], m[2], m[3]);
+      return iso && String(d.name || "").trim() ? { id: uid(), label: String(d.name).trim().slice(0, 60), date: iso } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 30);
+  return { name: String(answer.moduleName || "").trim().slice(0, 60), groups: usedGroups, assessments, notes, rules, dates };
 }
 
 // Shows whether the AI reader is on, in the sidebar button and on the module page
@@ -1487,6 +1700,7 @@ async function handleFiles(files) {
         assessments: parsed.assessments,
         notes: parsed.notes,
         rules: parsed.rules,
+        dates: parsed.dates || [],
         sourceText: text.slice(0, SOURCE_TEXT_LIMIT), // kept so the AI can read it again later
       };
       state.modules.push(mod);
@@ -1511,7 +1725,7 @@ async function handleFiles(files) {
 async function rereadWithAi() {
   const mod = currentModule();
   if (!mod || !mod.sourceText) return;
-  if (!confirm(`Let the AI read "${mod.name}" again? Its assessments will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
+  if (!confirm(`Let the AI read "${mod.name}" again? Its assessments and key dates will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
   const btn = $("rereadBtn");
   btn.disabled = true;
   btn.textContent = "🤖 Reading…";
@@ -1524,6 +1738,7 @@ async function rereadWithAi() {
       if (old) a.mark = old.mark;
     });
     Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy,
+      dates: parsed.dates && parsed.dates.length ? parsed.dates : mod.dates || [],
       aiInput: readBy === "ai" ? parsed.input : undefined });
     saveState();
     render();
@@ -1612,6 +1827,26 @@ $("aiTest").addEventListener("click", async () => {
 });
 
 $("rereadBtn").addEventListener("click", rereadWithAi);
+
+// Key dates
+$("pastDatesBtn").addEventListener("click", () => {
+  showPastDates = !showPastDates;
+  renderKeyDates();
+});
+$("moreDatesBtn").addEventListener("click", () => {
+  showAllUpcoming = !showAllUpcoming;
+  renderKeyDates();
+});
+$("addDateBtn").addEventListener("click", () => {
+  const mod = currentModule();
+  mod.dates = mod.dates || [];
+  mod.dates.push({ id: uid(), label: "", date: todayIso() });
+  saveState();
+  renderDatesEditor(mod);
+  renderKeyDates();
+  const inputs = document.querySelectorAll("#datesEdit .de-label");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
 
 // Folders
 $("addFolderBtn").addEventListener("click", () => {

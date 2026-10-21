@@ -4,6 +4,7 @@ A website where students upload their module frameworks and get a mark calculato
 
 - Upload a module framework (PDF, Word `.docx` or `.txt`). The site finds every test and assignment and its weight.
 - Add as many modules as you like. Each module keeps its own marks.
+- **Key dates:** the dates of tests, exams and due dates are read from each framework and listed under **Key dates** in the sidebar, soonest first, with a countdown ("today", "tomorrow", "in 5 days") that updates every day. Fix or add dates in the **Key dates** list on a module's page.
 - Sort modules into folders (e.g. "Semester 1", "Semester 2"): click **+ New folder**, click a folder's name to rename it, and drag modules onto it or pick the folder at the top of a module's page. Choose **Save to folder** before uploading to put new modules straight into a folder.
 - Enter a mark (as `68` or `34/50`) and your final mark updates immediately.
 - When every mark except the final test (e.g. A2) is entered, the bottom of the page shows the percentage you need in that test to reach your goal (50% by default).
