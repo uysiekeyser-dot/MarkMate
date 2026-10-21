@@ -861,6 +861,12 @@ const fmt = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString();
 
 const $ = id => document.getElementById(id);
 
+// On a phone the module page is below the sidebar, so jump down to it after choosing a module
+const onPhone = () => matchMedia("(max-width: 800px)").matches;
+const showModuleOnPhone = () => {
+  if (onPhone() && currentModule()) $("main").scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
 function render() {
   renderModuleList();
   renderKeyDates();
@@ -928,6 +934,7 @@ function renderKeyDates() {
       render();
       const box = $("datesBox");
       if (box) box.open = true;
+      showModuleOnPhone();
     });
     return li;
   };
@@ -986,7 +993,8 @@ function renderRules(mod) {
   const rules = mod.rules || [];
   const box = $("rulesBox");
   box.hidden = !notes.length && !rules.length;
-  box.open = notes.length > 0; // closed unless there's something the student must know
+  // Closed unless there's something the student must know (and always closed on a phone: it's long)
+  box.open = notes.length > 0 && !onPhone();
   $("rulesCount").textContent = rules.length ? `(${rules.length})` : "";
   $("rulesList").innerHTML =
     notes.map(n => `<li class="rule-note">${escapeHtml(n)}</li>`).join("") +
@@ -1023,6 +1031,7 @@ function moduleItem(mod) {
     state.selectedId = mod.id;
     saveState();
     render();
+    showModuleOnPhone();
   });
   li.appendChild(btn);
   return li;
@@ -1138,7 +1147,7 @@ function groupRow(mod, g) {
   tr.dataset.gid = g.id;
   tr.innerHTML = `
     <td><input type="text" class="in-gname" aria-label="Group name"><span class="sub">Group</span></td>
-    <td class="num"><input type="number" class="in-weight in-gweight" min="0" max="100" step="any" aria-label="Group weight"><span class="sub">of final mark</span></td>
+    <td class="num" data-label="Weight %"><input type="number" class="in-weight in-gweight" min="0" max="100" step="any" aria-label="Group weight"><span class="sub">of final mark</span></td>
     <td colspan="3" class="group-info"></td>
     <td class="center"><button class="del" title="Remove group (keeps its assessments)">✕</button></td>`;
   const nameIn = tr.querySelector(".in-gname");
@@ -1169,10 +1178,10 @@ function assessmentRow(mod, a) {
   if (g) tr.classList.add("in-group");
   tr.innerHTML = `
     <td class="name-cell"><input type="text" class="in-name" aria-label="Assessment name"></td>
-    <td class="num"><input type="number" class="in-weight in-aweight" min="0" max="100" step="any" aria-label="Weight"><span class="sub">${g ? "of group" : ""}</span></td>
-    <td class="num"><input type="text" class="in-mark" inputmode="decimal" placeholder="–" aria-label="Your mark"><span class="mark-pct"></span></td>
-    <td class="num contrib"></td>
-    <td class="center"><input type="radio" name="finalPick" class="in-final" aria-label="This is the final test"></td>
+    <td class="num" data-label="Weight %"><input type="number" class="in-weight in-aweight" min="0" max="100" step="any" aria-label="Weight"><span class="sub">${g ? "of group" : ""}</span></td>
+    <td class="num" data-label="Your mark"><input type="text" class="in-mark" inputmode="decimal" placeholder="–" aria-label="Your mark"><span class="mark-pct"></span></td>
+    <td class="num contrib" data-label="Counts for"></td>
+    <td class="center" data-label="Final"><input type="radio" name="finalPick" class="in-final" aria-label="This is the final test"></td>
     <td class="center"><button class="del" title="Remove">✕</button></td>`;
 
   const nameIn = tr.querySelector(".in-name");
@@ -1719,6 +1728,7 @@ async function handleFiles(files) {
     (aiProblems.length ? ` The AI couldn't read ${aiProblems.join("; ")}. The built-in reader was used instead.` : "");
   saveState();
   render();
+  if (added) showModuleOnPhone();
 }
 
 // "Read again with AI": replaces the assessments, keeping marks of assessments with the same name
@@ -1778,6 +1788,7 @@ $("addManualBtn").addEventListener("click", () => {
   state.selectedId = mod.id;
   saveState();
   render();
+  showModuleOnPhone();
   $("moduleName").select();
 });
 
@@ -1915,6 +1926,40 @@ document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", ()
   saveState();
   updateResults();
 }));
+
+// ---------- Phone app (installable web app) ----------
+// Android and desktop Chrome/Edge offer an install prompt; Safari on iPhone needs "Add to Home Screen".
+
+let installPrompt = null;
+const runningAsApp = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault(); // show our own button instead of the browser's banner
+  installPrompt = e;
+  $("installBtn").hidden = false;
+});
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  $("installBtn").hidden = true;
+});
+if (isIos && !runningAsApp()) $("installBtn").hidden = false;
+
+$("installBtn").addEventListener("click", async () => {
+  if (installPrompt) {
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    installPrompt = null;
+    if (outcome === "accepted") $("installBtn").hidden = true;
+  } else {
+    $("installDialog").showModal();
+  }
+});
+$("installClose").addEventListener("click", () => $("installDialog").close());
+
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(err => console.warn("Offline support not available", err));
+}
 
 // Backup / restore (marks are stored per browser, so this moves them between devices)
 $("exportBtn").addEventListener("click", () => {

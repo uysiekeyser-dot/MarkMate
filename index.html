@@ -4,8 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mark Calculator</title>
+  <!-- Installable as a phone app -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#3b5bdb">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Marks">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -14,6 +23,7 @@
   <header class="topbar">
     <h1>📘 Mark Calculator</h1>
     <div class="topbar-actions">
+      <button id="installBtn" class="btn btn-primary" hidden>📲 Install app</button>
       <button id="exportBtn" class="btn btn-ghost" title="Download a backup of all your modules and marks">Backup</button>
       <label class="btn btn-ghost" title="Load a backup file">
         Restore
@@ -168,6 +178,23 @@
     </main>
   </div>
 
+  <!-- How to install on an iPhone (Safari has no install button) -->
+  <dialog id="installDialog" class="ai-dialog">
+    <h2>📲 Install on your iPhone or iPad</h2>
+    <ol>
+      <li>Open this page in <b>Safari</b>.</li>
+      <li>Tap the <b>Share</b> button (the square with an arrow pointing up).</li>
+      <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+    </ol>
+    <p>The Mark Calculator then opens from your home screen like an app, also without internet (uploading frameworks and the AI reader still need internet).</p>
+    <p class="muted small"><b>Important:</b> on iPhone the installed app keeps its own copy of your data, separate from Safari.
+      To bring your modules and marks across, tap <b>Backup</b> in Safari first, then <b>Restore</b> in the app.</p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button type="button" id="installClose" class="btn btn-primary btn-small">OK</button>
+    </div>
+  </dialog>
+
   <!-- AI reader settings -->
   <dialog id="aiDialog" class="ai-dialog">
     <h2>🤖 AI reader (Google Gemini)</h2>
@@ -197,6 +224,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
