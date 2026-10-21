@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mark Calculator</title>
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -75,6 +75,11 @@
             </label>
           </div>
           <p id="weightWarning" class="warning" hidden></p>
+          <details id="rulesBox" class="rules" hidden>
+            <summary>Rules from your framework <span id="rulesCount"></span></summary>
+            <ul id="rulesList"></ul>
+            <p class="muted small">These are copied from your framework. The calculator doesn't apply them for you: check them yourself, e.g. a sub-minimum for a test.</p>
+          </details>
 
           <div class="table-wrap">
             <table class="assess-table">
@@ -145,6 +150,6 @@
     </main>
   </div>
 
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

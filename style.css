@@ -251,6 +251,16 @@ body {
 }
 .link-btn:hover { text-decoration: underline; }
 .table-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rules {
+  margin: 12px 0 4px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; background: var(--bg); font-size: 0.9rem;
+}
+.rules[hidden] { display: none; }
+.rules summary { cursor: pointer; font-weight: 700; }
+.rules ul { margin: 8px 0; padding-left: 20px; }
+.rules li { margin-bottom: 6px; }
+.rules li.rule-note { color: var(--primary); font-weight: 600; list-style: "ℹ️  "; }
+.rules p { margin: 4px 0 0; }
 .warning span { display: block; }
 .warning span + span { margin-top: 4px; }
 

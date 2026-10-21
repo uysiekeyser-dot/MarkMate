@@ -78,6 +78,9 @@ async function extractText(file) {
   return await file.text();
 }
 
+// Marks the end of a Word paragraph, so the rules finder knows where sentences end
+const PARA_END = "\u2029";
+
 // One line per paragraph, and one line per table row with its cells separated by COL,
 // so a row like "Test 1 | Sit down | 10 March | 40%" stays together.
 function wordHtmlToLines(html) {
@@ -102,7 +105,7 @@ function wordHtmlToLines(html) {
         }
       } else if (/^(P|H\d|LI)$/.test(child.tagName)) {
         const text = clean(child.textContent);
-        if (text) lines.push(text);
+        if (text) lines.push(text + PARA_END);
       } else {
         walk(child);
       }
@@ -160,6 +163,7 @@ const WEIGHT_HEADER = /\b(weight(ing)?|gewig|percentage)\b/i;
 function parseFramework(text) {
   const lines = text.split(/\r?\n/)
     .map(l => l
+      .split(PARA_END).join("")
       .replace(/https?:\/\/\S+|www\.\S+/gi, " ")   // web links ("%20" is not a weight)
       .replace(/\S*%[0-9A-Fa-f]{2}\S*/g, " ")       // pieces of links broken over lines
       .replace(/\t| {2,}/g, COL)                    // tabs / wide spaces are table columns
@@ -171,7 +175,7 @@ function parseFramework(text) {
   const groups = [];
   const equations = [];
   const seen = new Set();
-  let lastLabel = "";
+  let recent = [];
   let group = null;          // group the next rows belong to ("Practical mark" ... "Total 100%")
   let weightColumn = 0;      // lines left in which a bare number at the end of a row is a weight
   let marksRows = 0;         // lines left in which "Essay questions | 50 | marks" is a part of the group
@@ -179,7 +183,7 @@ function parseFramework(text) {
   const startGroup = name => {
     group = { id: uid(), name: tidy(name.replace(/¦/g, " ")), weight: 0, byMarks: false };
     groups.push(group);
-    lastLabel = "";
+    recent = [];
     marksRows = 12;
   };
   const groupTotal = g => found.filter(a => a.groupId === g.id).reduce((s, a) => s + a.weight, 0);
@@ -217,7 +221,7 @@ function parseFramework(text) {
     const ratio = flat.match(/^([A-Za-z][A-Za-z ()]*?)\s*:\s*([A-Za-z][A-Za-z ()]*?)\s+(\d{1,3})\s*%?\s*:\s*(\d{1,3})\s*%?\.?$/);
     if (ratio) { addRatio(equations, ratio[1], ratio[2], ratio[3], ratio[4]); continue; }
 
-    if (/^total\b/i.test(flat)) { group = null; lastLabel = ""; continue; }
+    if (/^total\b/i.test(flat)) { group = null; recent = []; continue; }
     if (line.includes("=")) { collectEquations(line, equations); continue; }
 
     const matches = [...line.matchAll(PCT)];
@@ -236,11 +240,11 @@ function parseFramework(text) {
       // Inside a group, parts given in marks: "Longer essay type questions | 50 | marks"
       const marks = group && marksRows > 0 && flat.match(/^(?:(.*[A-Za-z].*?)\s+)?(\d{1,3})\s*marks$/i);
       if (marks) {
-        const name = marks[1] ? cleanName(line.replace(/¦?\s*\d{1,3}\s*¦?\s*marks\s*$/i, "")) : cleanName(lastLabel);
+        const name = marks[1] ? cleanName(line.replace(/¦?\s*\d{1,3}\s*¦?\s*marks\s*$/i, "")) : cleanName(recent[recent.length - 1] || "");
         if (name && !/^[a-z]/.test(name)) {
           group.byMarks = true;
           addRow(name, parseInt(marks[2], 10), group);
-          lastLabel = "";
+          recent = [];
           marksRows = 12;
           continue;
         }
@@ -249,7 +253,10 @@ function parseFramework(text) {
 
       if (hasLetters && isGroupHeader(line)) { startGroup(line); continue; }
       // Remember short text lines: in Word tables the name and weight are often on separate lines
-      if (hasLetters && line.length <= 80) lastLabel = line;
+      if (hasLetters && line.length <= 100) {
+        recent.push(line);
+        if (recent.length > 8) recent.shift();
+      }
       continue;
     }
 
@@ -261,7 +268,7 @@ function parseFramework(text) {
       const total = flat.slice(each[0].length).match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
       const n = count || (total ? Math.round(parseFloat(total[1].replace(",", ".")) / w) : 1);
       add(capitalize(tidy(name)), w, n);
-      lastLabel = "";
+      recent = [];
       continue;
     }
 
@@ -270,7 +277,7 @@ function parseFramework(text) {
     // Check the name and weight for rules, but not a comments column after the weight:
     // "Test 1 | 40% | A subminimum of 40% is required" is still an assessment
     const upToWeight = line.slice(0, line.indexOf(pctCell) + pctCell.length);
-    if (SKIP_LINE.test(upToWeight)) { lastLabel = ""; continue; }
+    if (SKIP_LINE.test(upToWeight)) { recent = []; continue; }
     // A full sentence ("The exam contributes 50% to your final mark.") usually repeats a table row
     if (/\.$/.test(pctCell) && pctCell.split(" ").length > 6) continue;
     // The rest of a formula that didn't fit on one line ("semester mark) + 60% theory exam mark")
@@ -280,16 +287,109 @@ function parseFramework(text) {
     const weight = parseFloat(matches[0][1].replace(",", "."));
     if (!(weight > 0 && weight <= 100)) continue;
 
-    add(hasLetters ? cleanName(line) : cleanName(lastLabel), weight);
-    lastLabel = "";
+    add(hasLetters ? cleanName(line) : pickLabel(recent), weight);
+    recent = [];
   }
 
   // Weights written out in sentences (frameworks without a table)
   readSentences(lines.map(l => l.replace(/¦/g, " ")).join(" ").replace(/\s+/g, " "), found, groups, equations);
 
   const usedGroups = settleGroups(found, groups, equations, lines);
+  const notes = dropSecondOpportunities(found, usedGroups);
   markLikelyFinal(found, usedGroups);
-  return { assessments: found, groups: usedGroups };
+  // (only spaces are trimmed: trim() would also remove the paragraph-end mark)
+  const ruleLines = text.split(/\r?\n/)
+    .map(l => l.replace(/https?:\/\/\S+|www\.\S+/gi, " ").replace(/^[ \t]+|[ \t]+$/g, ""))
+    .filter(l => l.replace(PARA_END, "").trim());
+  return { assessments: found, groups: usedGroups, notes, rules: findRules(ruleLines) };
+}
+
+// Words that show a line is an assessment's name, and lines that are only a date or a time
+const ASSESSMENT_WORD = /\b(assessments?|tests?|toetse?|exams?|eksamen|examination|assignments?|taak|take|opdrag|projects?|projek|quiz(zes)?|vasvrae?|tutorials?|tutoriale?|practicals?|prakties|praktika|reports?|verslag|essays?|presentations?|portfolio|participation|deelname|reflection|proposal)\b/i;
+const CODE_WORD = /\b[A-Z]{1,4}\d+[A-Z0-9.]*\b/;
+const DATE_OR_TIME = /^(\d{1,2}[\s/.-]+[A-Za-z]+[\s/.-]+\d{2,4}|\d{1,2}\s+[A-Za-z]+$|\d{1,2}[:h]\d{2}|(mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?\b)/i;
+
+// When the weight has a line of its own, the name is one of the lines above it:
+// "Assessment 1 Semester 1 (A1S1) / Test / 07 April 2026 / 17:40 / 15%"
+function pickLabel(recent) {
+  // Short lines only: a wrapped sentence above the table is not a name
+  const lines = recent.map(l => l.trim())
+    .filter(l => l && !DATE_OR_TIME.test(l) && l.split("¦")[0].trim().split(/\s+/).length <= 10);
+  if (!lines.length) return "";
+  const first = l => l.split("¦")[0];
+  // The assessment code closest to the weight, e.g. "Assessment 1 Semester 1 (A1S1)"
+  const coded = lines.filter(l => CODE_WORD.test(first(l))).pop();
+  if (coded) {
+    if (ASSESSMENT_WORD.test(first(coded))) return cleanName(coded);
+    // "Semester 1 (AFS1): / Tutorial tests during lectures" -> "Tutorial tests during lectures (AFS1)"
+    const code = first(coded).match(CODE_WORD)[0];
+    const named = lines.slice(lines.indexOf(coded) + 1).filter(l => ASSESSMENT_WORD.test(first(l))).pop();
+    return named ? `${cleanName(named)} (${code})` : cleanName(coded);
+  }
+  return cleanName(lines.find(l => ASSESSMENT_WORD.test(l.split("¦")[0])) || lines[lines.length - 1]);
+}
+
+// A3, supplementary exams and sick tests only replace a missed or failed assessment.
+// If counting them pushes the total over 100%, leave them out and say so.
+const SECOND_OPPORTUNITY = /\bA3\b|assessment 3\b|supplementar|sick test|siektetoets|re-?exam|second (exam )?opportunity|tweede geleentheid|herkans|replacement/i;
+
+function dropSecondOpportunities(found, groups) {
+  const share = a => effectiveWeight({ groups }, a);
+  const total = found.reduce((s, a) => s + share(a), 0);
+  const extra = found.filter(a => !a.groupId && SECOND_OPPORTUNITY.test(a.name));
+  const extraTotal = extra.reduce((s, a) => s + share(a), 0);
+  if (!extra.length || total <= 100.5 || Math.abs(total - extraTotal - 100) > 0.5) return [];
+  extra.forEach(a => found.splice(found.indexOf(a), 1));
+  return extra.map(a => `${a.name} (${fmt(a.weight, 2)}%) is a second opportunity: it only replaces an assessment you missed or failed, so it isn't counted in your final mark here. If you write it, check your framework for how it replaces the other marks.`);
+}
+
+// Sentences that set rules for passing: sub-minimums, exam entry, how A3 works ...
+const RULE = /(sub-?\s?minimum|minimum (class )?(mark|of|average|requirement)|at least \d{1,3}\b|\d{1,3}\s*% or (higher|more|above)|(exam|examination) (entry|access|admission)|access to (the )?(exam|A3)|qualify|pass requirement|required to pass|is required to|in order to (pass|write)|must be (obtained|achieved)|capped|highest of|will replace|replaces|count only)/i;
+const AFRIKAANS = /\b(die|van|word|nie|vir|moet|punt|sal|hierdie|indien|eksamen)\b/gi;
+
+function findRules(lines) {
+  // Read the left column and the right column separately, so two-language PDFs stay readable.
+  // A bullet in its own column ("• | text") isn't a column, and neither is a line with
+  // one word per column ("A | MINIMUM | CLASS | MARK").
+  const paraEnds = lines.map(l => l.endsWith(PARA_END));
+  const cleaned = lines.map(l => l.replace(PARA_END, "").replace(/^\s*([•◼■▪●o\-]|\d+[.)])\s*¦\s*/, "• "));
+  const wordPerCell = l => l.split("¦").every(c => c.trim().split(/\s+/).length <= 2);
+  const left = cleaned.map(l => (wordPerCell(l) ? l.replace(/¦/g, " ") : l.split("¦")[0]).trim());
+  const right = cleaned.map(l => (wordPerCell(l) ? "" : l.split("¦").slice(1).join(" ")).trim());
+
+  const sentences = [];
+  for (const column of [left, right]) {
+    // A line much shorter than the others, or ending in . : ! ?, ends a paragraph or a heading
+    const lengths = column.filter(Boolean).map(l => l.length).sort((a, b) => a - b);
+    const typical = lengths[Math.floor(lengths.length / 2)] || 60;
+    let paragraph = "";
+    column.forEach((l, i) => {
+      if (!l) return;
+      paragraph = paragraph ? `${paragraph} ${l}` : l;
+      if (paraEnds[i] || /[.!?:]$/.test(l) || l.length < typical * 0.6) {
+        sentences.push(...paragraph.split(/(?<=[.!?])\s+(?=[A-Z])|\s+•\s+/));
+        paragraph = "";
+      }
+    });
+    if (paragraph) sentences.push(...paragraph.split(/(?<=[.!?])\s+(?=[A-Z])|\s+•\s+/));
+  }
+
+  const rules = [];
+  const seen = new Set();
+  for (let s of sentences) {
+    s = s.replace(/^[•◼■▪●\-\s]+/, "").replace(/\s+/g, " ").trim();
+    if (/\.{4,}/.test(s)) continue; // table of contents
+    if (s.length < 25 || s.length > 320 || /https?:|www\./i.test(s) || !RULE.test(s)) continue;
+    if (!/^[A-Z0-9]/.test(s)) continue; // the end of a sentence cut off by a page or column break
+    if (s.split(" ").length < 6 || /notional|credit value/i.test(s)) continue; // headings, study hours
+    if ((s.match(AFRIKAANS) || []).length >= 3) continue; // the Afrikaans copy of an English rule
+    const key = s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rules.push(s);
+    if (rules.length >= 12) break;
+  }
+  return rules;
 }
 
 // Short heading lines like "Theory semester mark" or "Practical mark" start a group
@@ -509,7 +609,7 @@ function cleanName(s) {
 function tidy(s) {
   return s
     .replace(/\b(weight(ing)?|contributes?|contribution|counts?|towards?|of (the )?final mark|of (the )?module mark)\b/gi, " ")
-    .replace(/[()\[\]:=|•·–—◼■▪●!]+/g, " ")
+    .replace(/[()\[\]:=|•·–—◼■▪●!*]+/g, " ")
     .replace(/\s-\s/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s\-.,;\/]+|[\s\-.,;\/]+$/g, "")
@@ -666,9 +766,23 @@ function render() {
     ? `Read from: ${mod.fileName}`
     : "Added manually";
   fillFolderSelect($("moduleFolder"), mod.folderId);
+  renderRules(mod);
   $("targetInput").value = mod.target;
   renderTable(mod);
   updateResults();
+}
+
+// Notes about how the framework was read, and the pass rules found in it
+function renderRules(mod) {
+  const notes = mod.notes || [];
+  const rules = mod.rules || [];
+  const box = $("rulesBox");
+  box.hidden = !notes.length && !rules.length;
+  box.open = notes.length > 0; // closed unless there's something the student must know
+  $("rulesCount").textContent = rules.length ? `(${rules.length})` : "";
+  $("rulesList").innerHTML =
+    notes.map(n => `<li class="rule-note">${escapeHtml(n)}</li>`).join("") +
+    rules.map(r => `<li>${escapeHtml(r)}</li>`).join("");
 }
 
 // Folders first (each with its modules), then the modules that aren't in a folder
@@ -1050,6 +1164,8 @@ async function handleFiles(files) {
         folderId: state.uploadFolderId || null,
         groups: parsed.groups,
         assessments: parsed.assessments,
+        notes: parsed.notes,
+        rules: parsed.rules,
       };
       state.modules.push(mod);
       state.selectedId = mod.id;
