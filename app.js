@@ -773,7 +773,7 @@ function render() {
 
   $("moduleName").value = mod.name;
   $("moduleSource").textContent = mod.fileName
-    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? " · read by AI 🤖" : ""}`
+    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? ` · read by AI 🤖${mod.aiInput === "pdf" ? " (from the PDF)" : ""}` : ""}`
     : "Added manually";
   fillFolderSelect($("moduleFolder"), mod.folderId);
   renderRules(mod);
@@ -1156,6 +1156,40 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
 
+// ---------- Saved framework PDFs ----------
+// Each uploaded PDF is kept in the browser's IndexedDB (localStorage is too small for files),
+// so "Read again with AI" can send the PDF itself. Not part of the backup file.
+
+const FILES_DB = "markCalcFiles";
+
+function openFilesDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FILES_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("files");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function filesDo(mode, action) {
+  try {
+    const db = await openFilesDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("files", mode);
+      const req = action(tx.objectStore("files"));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("Saved files not available", e); // private window, blocked storage...
+    return null;
+  }
+}
+
+const saveFile = (id, blob) => filesDo("readwrite", store => store.put(blob, id));
+const loadFile = id => filesDo("readonly", store => store.get(id));
+const deleteFile = id => filesDo("readwrite", store => store.delete(id));
+
 // ---------- AI reader (Google Gemini) ----------
 // Optional: each student uses their own free Gemini API key, kept only in their own browser
 // (not in the backup file). Without a key, or if the AI fails, the built-in reader is used.
@@ -1265,7 +1299,9 @@ async function callGemini(body, onStatus = () => {}) {
         throw new Error("Google didn't accept the API key. Check that you copied all of it.");
       }
       const msg = googleMessage(detail);
-      throw new Error(`Google returned an error (${res.status})${msg ? `: ${msg}` : "."}`);
+      const err = new Error(`Google returned an error (${res.status})${msg ? `: ${msg}` : "."}`);
+      err.status = res.status; // 400/413 for a file Google can't take: aiRead then sends the text instead
+      throw err;
     }
   }
   if (busy) throw new Error("Google's AI is too busy right now (error 503). This is on Google's side, not your key. Try again in a few minutes.");
@@ -1287,8 +1323,41 @@ function weightProblems(groups, assessments) {
 
 // Asks the AI to read the framework. If the weights in its answer don't add up,
 // it's told what's wrong and asked once more for a corrected answer.
-async function aiRead(text, onStatus = () => {}) {
-  const framework = { role: "user", parts: [{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }] };
+// PDFs up to this size are sent to the AI as the file itself (it sees the pages, not just the text)
+const AI_PDF_LIMIT = 15 * 1024 * 1024;
+
+const blobToBase64 = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+// Reads the framework with the AI: from the PDF itself when there is one, otherwise from its text.
+// If Google can't take the PDF, the text is sent instead.
+async function aiRead(text, onStatus = () => {}, pdf = null) {
+  if (pdf && pdf.size <= AI_PDF_LIMIT) {
+    try {
+      const data = await blobToBase64(pdf);
+      const result = await aiReadParts([
+        { inlineData: { mimeType: "application/pdf", data } },
+        { text: "This PDF is the module framework. Read every page, including tables, footnotes and both language columns." },
+      ], onStatus);
+      result.input = "pdf";
+      return result;
+    } catch (err) {
+      if (err.status !== 400 && err.status !== 413) throw err; // busy, limit, bad key: sending text won't help
+      console.warn("Gemini couldn't take the PDF, sending the text instead", err);
+      onStatus("Google couldn't take the PDF, sending its text instead…");
+    }
+  }
+  const result = await aiReadParts([{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }], onStatus);
+  result.input = "text";
+  return result;
+}
+
+async function aiReadParts(frameworkParts, onStatus) {
+  const framework = { role: "user", parts: frameworkParts };
   const ask = async contents => {
     const { data, model } = await callGemini({
       systemInstruction: { parts: [{ text: AI_INSTRUCTIONS }] },
@@ -1394,11 +1463,12 @@ async function handleFiles(files) {
     status.textContent = `Reading ${file.name}…`;
     try {
       const text = await extractText(file);
+      const pdf = /\.pdf$/i.test(file.name) ? file : null;
       let parsed = null, readBy = "built-in";
       if (aiOn()) {
         status.textContent = `The AI is reading ${file.name}… (this can take up to a minute)`;
         try {
-          ({ parsed, readBy } = chooseReading(await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`)), text));
+          ({ parsed, readBy } = chooseReading(await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`), pdf), text));
         } catch (err) {
           console.warn(err);
           aiProblems.push(`${file.name} (${err.message.replace(/\.$/, "")})`);
@@ -1410,6 +1480,7 @@ async function handleFiles(files) {
         name: parsed.name || guessModuleName(text, file.name),
         fileName: file.name,
         readBy,
+        aiInput: readBy === "ai" ? parsed.input : undefined,
         target: 50,
         folderId: state.uploadFolderId || null,
         groups: parsed.groups,
@@ -1420,6 +1491,7 @@ async function handleFiles(files) {
       };
       state.modules.push(mod);
       state.selectedId = mod.id;
+      if (pdf) await saveFile(mod.id, pdf); // for "Read again with AI"
       added++;
     } catch (err) {
       console.error(err);
@@ -1444,13 +1516,15 @@ async function rereadWithAi() {
   btn.disabled = true;
   btn.textContent = "🤖 Reading…";
   try {
-    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg)), mod.sourceText);
+    const pdf = /\.pdf$/i.test(mod.fileName || "") ? await loadFile(mod.id) : null;
+    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg), pdf), mod.sourceText);
     const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
     parsed.assessments.forEach(a => {
       const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
       if (old) a.mark = old.mark;
     });
-    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy });
+    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy,
+      aiInput: readBy === "ai" ? parsed.input : undefined });
     saveState();
     render();
   } catch (err) {
@@ -1588,6 +1662,7 @@ $("deleteModuleBtn").addEventListener("click", () => {
   const mod = currentModule();
   if (!confirm(`Delete "${mod.name}" and all its marks?`)) return;
   state.modules = state.modules.filter(m => m.id !== mod.id);
+  deleteFile(mod.id);
   state.selectedId = state.modules.length ? state.modules[state.modules.length - 1].id : null;
   saveState();
   render();

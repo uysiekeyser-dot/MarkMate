@@ -19,6 +19,8 @@ The built-in reader handles common framework layouts. For frameworks it gets wro
 2. On the site, click **🤖 AI reader**, paste the key, click **Test key** and then **Save**.
 3. Upload frameworks as usual. For modules you uploaded before, open the module and click **🤖 Read again with AI** (your marks are kept).
 
+PDF frameworks are sent to the AI as the PDF itself, so it sees the pages (tables, columns, footnotes, even scanned pages) and not just the text; Word files are sent as text. Uploaded PDFs are kept in the browser so **Read again with AI** can send them again. If the AI's weights don't add up, it's asked once more to fix them, and if they still don't, the built-in reader's weights are used.
+
 Each student uses their own key. It's saved only in their own browser and is not included in Backup. The free tier has a daily limit; when it's used up, or if the AI fails, the built-in reader is used instead. On the free tier Google may use the text you send to improve its products, so don't upload anything private. Always check the weights the AI found against your framework.
 
 ## Files
