@@ -1217,39 +1217,66 @@ const AI_SCHEMA = {
 };
 
 // Sends the framework text to Gemini. Tries the next model if one isn't available.
-async function callGemini(body) {
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Google's message from an error reply, e.g. "The model is overloaded. Please try again later."
+const googleMessage = detail => {
+  try { return JSON.parse(detail).error.message || ""; } catch (e) { return ""; }
+};
+
+// When Google is busy (500-504) a model is tried 3 times, waiting a little longer each time,
+// before moving on to the next model. A used-up free limit (429) is per model, so the next
+// model is tried straight away. onStatus(text) reports what's happening.
+const BUSY_RETRY_WAITS = [2000, 5000];
+
+async function callGemini(body, onStatus = () => {}) {
   const settings = loadAi();
   if (!settings.key) throw new Error("No AI key saved.");
   const models = [...new Set([settings.model, ...AI_MODELS].filter(Boolean))];
-  let lastError = "";
+  let busy = false, limited = false, missing = "";
   for (const model of models) {
-    let res;
-    try {
-      res = await fetch(`${AI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": settings.key },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      throw new Error("Couldn't reach Google. Check your internet connection.");
+    for (let attempt = 0; attempt <= BUSY_RETRY_WAITS.length; attempt++) {
+      let res;
+      try {
+        res = await fetch(`${AI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": settings.key },
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        throw new Error("Couldn't reach Google. Check your internet connection.");
+      }
+      if (res.ok) return { data: await res.json(), model };
+      const detail = await res.text().catch(() => "");
+      if (res.status >= 500 && res.status <= 504) {
+        busy = true;
+        if (attempt < BUSY_RETRY_WAITS.length) {
+          onStatus(`Google's AI is busy, trying again… (${model})`);
+          await wait(BUSY_RETRY_WAITS[attempt]);
+          continue;
+        }
+        break; // next model
+      }
+      if (res.status === 404) { missing = `Model "${model}" isn't available.`; break; }
+      if (res.status === 429) { limited = true; onStatus(`Free limit reached for ${model}, trying another model…`); break; }
+      if ((res.status === 400 && /api.?key/i.test(detail)) || res.status === 401 || res.status === 403) {
+        throw new Error("Google didn't accept the API key. Check that you copied all of it.");
+      }
+      const msg = googleMessage(detail);
+      throw new Error(`Google returned an error (${res.status})${msg ? `: ${msg}` : "."}`);
     }
-    if (res.ok) return { data: await res.json(), model };
-    const detail = await res.text().catch(() => "");
-    if (res.status === 404) { lastError = `Model "${model}" isn't available.`; continue; }
-    if (res.status === 429) throw new Error("The free AI limit is used up for now. Try again in a minute, or tomorrow.");
-    if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google didn't accept the API key. Check that you copied all of it.");
-    if (res.status === 401 || res.status === 403) throw new Error("Google didn't accept the API key. Check that you copied all of it.");
-    throw new Error(`Google returned an error (${res.status}).`);
   }
-  throw new Error(lastError || "No AI model is available.");
+  if (busy) throw new Error("Google's AI is too busy right now (error 503). This is on Google's side, not your key. Try again in a few minutes.");
+  if (limited) throw new Error("The free AI limit is used up for now. Try again in a minute, or tomorrow.");
+  throw new Error(missing || "No AI model is available.");
 }
 
-async function aiRead(text) {
+async function aiRead(text, onStatus) {
   const { data, model } = await callGemini({
     systemInstruction: { parts: [{ text: AI_INSTRUCTIONS }] },
     contents: [{ role: "user", parts: [{ text: "Module framework:\n\n" + text.split(PARA_END).join("").slice(0, 150000) }] }],
     generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: AI_SCHEMA },
-  });
+  }, onStatus);
   const raw = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
   let answer;
   try { answer = JSON.parse(raw); } catch (e) { throw new Error("The AI's answer couldn't be read."); }
@@ -1315,7 +1342,7 @@ async function handleFiles(files) {
       if (aiOn()) {
         status.textContent = `The AI is reading ${file.name}… (this can take up to a minute)`;
         try {
-          parsed = await aiRead(text);
+          parsed = await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`));
         } catch (err) {
           console.warn(err);
           aiProblems.push(`${file.name} (${err.message.replace(/\.$/, "")})`);
@@ -1362,7 +1389,7 @@ async function rereadWithAi() {
   btn.disabled = true;
   btn.textContent = "🤖 Reading…";
   try {
-    const parsed = await aiRead(mod.sourceText);
+    const parsed = await aiRead(mod.sourceText, msg => (btn.textContent = "🤖 " + msg));
     const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
     parsed.assessments.forEach(a => {
       const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
@@ -1445,7 +1472,7 @@ $("aiTest").addEventListener("click", async () => {
   saveAi({ key, model: $("aiModel").value.trim() }); // test exactly what's typed
   aiStatus("Testing…");
   try {
-    const { model } = await callGemini({ contents: [{ role: "user", parts: [{ text: "Reply with the word OK." }] }] });
+    const { model } = await callGemini({ contents: [{ role: "user", parts: [{ text: "Reply with the word OK." }] }] }, msg => aiStatus(msg));
     aiStatus(`It works! (model: ${model}). Click Save to keep it.`, "good");
   } catch (err) {
     aiStatus(err.message, "bad");
