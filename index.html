@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mark Calculator</title>
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -32,13 +32,20 @@
           Choose files
           <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple hidden>
         </label>
+        <label class="folder-pick" id="uploadFolderPick">Save to folder:
+          <select id="uploadFolder"></select>
+        </label>
         <p id="uploadStatus" class="upload-status"></p>
       </div>
 
       <button id="addManualBtn" class="btn btn-ghost btn-block">+ Add module manually</button>
 
-      <h2 class="side-heading">My modules</h2>
+      <div class="side-heading-row">
+        <h2 class="side-heading">My modules</h2>
+        <button id="addFolderBtn" class="link-btn">+ New folder</button>
+      </div>
       <ul id="moduleList" class="module-list"></ul>
+      <p id="dragHint" class="muted small" hidden>Drag a module onto a folder to move it there.</p>
       <p id="noModules" class="muted small">No modules yet. Upload a module framework to start.</p>
     </aside>
 
@@ -61,7 +68,12 @@
             <input id="moduleName" class="module-name" aria-label="Module name">
             <button id="deleteModuleBtn" class="btn btn-danger btn-small">Delete module</button>
           </div>
-          <p id="moduleSource" class="muted small"></p>
+          <div class="module-meta">
+            <p id="moduleSource" class="muted small"></p>
+            <label class="folder-pick small">Folder:
+              <select id="moduleFolder"></select>
+            </label>
+          </div>
           <p id="weightWarning" class="warning" hidden></p>
 
           <div class="table-wrap">
@@ -133,6 +145,6 @@
     </main>
   </div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

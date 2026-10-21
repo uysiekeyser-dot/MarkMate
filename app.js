@@ -21,12 +21,18 @@ let state = loadState();
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved && Array.isArray(saved.modules)) {
-      saved.modules.forEach(m => (m.groups = m.groups || []));
-      return saved;
-    }
+    if (saved && Array.isArray(saved.modules)) return upgradeState(saved);
   } catch (e) { /* ignore */ }
-  return { modules: [], selectedId: null };
+  return { modules: [], folders: [], selectedId: null, uploadFolderId: null };
+}
+
+// Older saves have no groups or folders yet
+function upgradeState(s) {
+  s.modules.forEach(m => (m.groups = m.groups || []));
+  s.folders = Array.isArray(s.folders) ? s.folders : [];
+  s.modules.forEach(m => { if (!s.folders.some(f => f.id === m.folderId)) m.folderId = null; });
+  if (!s.folders.some(f => f.id === s.uploadFolderId)) s.uploadFolderId = null;
+  return s;
 }
 
 function saveState() {
@@ -659,32 +665,124 @@ function render() {
   $("moduleSource").textContent = mod.fileName
     ? `Read from: ${mod.fileName}`
     : "Added manually";
+  fillFolderSelect($("moduleFolder"), mod.folderId);
   $("targetInput").value = mod.target;
   renderTable(mod);
   updateResults();
 }
 
+// Folders first (each with its modules), then the modules that aren't in a folder
 function renderModuleList() {
   const list = $("moduleList");
   list.innerHTML = "";
   $("noModules").hidden = state.modules.length > 0;
+  $("dragHint").hidden = !(state.folders.length && state.modules.length);
+  $("uploadFolderPick").hidden = !state.folders.length;
+  fillFolderSelect($("uploadFolder"), state.uploadFolderId);
 
-  for (const mod of state.modules) {
-    const li = document.createElement("li");
-    const btn = document.createElement("button");
-    btn.className = mod.id === state.selectedId ? "active" : "";
-    btn.innerHTML = `<span class="m-name"></span><span class="m-mark"></span>`;
-    btn.querySelector(".m-name").textContent = mod.name || "Untitled module";
-    btn.querySelector(".m-mark").textContent = fmt(calculate(mod).finalSoFar) + "%";
-    btn.dataset.id = mod.id;
-    btn.addEventListener("click", () => {
-      state.selectedId = mod.id;
-      saveState();
-      render();
-    });
-    li.appendChild(btn);
-    list.appendChild(li);
-  }
+  for (const f of state.folders) list.appendChild(folderItem(f));
+  state.modules.filter(m => !m.folderId).forEach(m => list.appendChild(moduleItem(m)));
+}
+
+function moduleItem(mod) {
+  const li = document.createElement("li");
+  const btn = document.createElement("button");
+  btn.className = mod.id === state.selectedId ? "active" : "";
+  btn.innerHTML = `<span class="m-name"></span><span class="m-mark"></span>`;
+  btn.querySelector(".m-name").textContent = mod.name || "Untitled module";
+  btn.querySelector(".m-mark").textContent = fmt(calculate(mod).finalSoFar) + "%";
+  btn.dataset.id = mod.id;
+  btn.draggable = true;
+  btn.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("text/module-id", mod.id);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  btn.addEventListener("click", () => {
+    state.selectedId = mod.id;
+    saveState();
+    render();
+  });
+  li.appendChild(btn);
+  return li;
+}
+
+function folderItem(f) {
+  const mods = state.modules.filter(m => m.folderId === f.id);
+  const li = document.createElement("li");
+  li.className = "folder" + (f.collapsed ? " collapsed" : "");
+  li.dataset.fid = f.id;
+  li.innerHTML = `
+    <div class="folder-head">
+      <button class="folder-toggle" aria-label="Open or close folder">▾</button>
+      <span class="folder-icon">📁</span>
+      <input class="folder-name" aria-label="Folder name">
+      <span class="folder-count"></span>
+      <button class="folder-del" title="Delete folder (keeps its modules)">✕</button>
+    </div>
+    <ul class="module-list folder-modules"></ul>`;
+  const nameIn = li.querySelector(".folder-name");
+  nameIn.value = f.name;
+  li.querySelector(".folder-count").textContent = mods.length;
+  const inner = li.querySelector(".folder-modules");
+  if (mods.length) mods.forEach(m => inner.appendChild(moduleItem(m)));
+  else inner.innerHTML = `<li class="folder-empty">Empty. Drag modules here.</li>`;
+
+  li.querySelector(".folder-toggle").addEventListener("click", () => {
+    f.collapsed = !f.collapsed;
+    saveState();
+    renderModuleList();
+  });
+  nameIn.addEventListener("input", () => {
+    f.name = nameIn.value;
+    saveState();
+    fillFolderSelect($("uploadFolder"), state.uploadFolderId);
+    const mod = currentModule();
+    if (mod) fillFolderSelect($("moduleFolder"), mod.folderId);
+  });
+  nameIn.addEventListener("keydown", e => { if (e.key === "Enter") nameIn.blur(); });
+  li.querySelector(".folder-del").addEventListener("click", () => {
+    const msg = mods.length
+      ? `Delete the folder "${f.name}"? Its ${mods.length} module${mods.length > 1 ? "s" : ""} will stay, just not in a folder.`
+      : `Delete the folder "${f.name}"?`;
+    if (!confirm(msg)) return;
+    mods.forEach(m => (m.folderId = null));
+    state.folders = state.folders.filter(x => x.id !== f.id);
+    if (state.uploadFolderId === f.id) state.uploadFolderId = null;
+    saveState();
+    render();
+  });
+
+  // Drop a module on the folder to move it in
+  li.addEventListener("dragover", e => {
+    if (!e.dataTransfer.types.includes("text/module-id")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    li.classList.add("drop-target");
+  });
+  li.addEventListener("dragleave", e => { if (!li.contains(e.relatedTarget)) li.classList.remove("drop-target"); });
+  li.addEventListener("drop", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    li.classList.remove("drop-target");
+    moveModule(e.dataTransfer.getData("text/module-id"), f.id);
+  });
+  return li;
+}
+
+function moveModule(moduleId, folderId) {
+  const mod = state.modules.find(m => m.id === moduleId);
+  if (!mod || mod.folderId === folderId) return;
+  mod.folderId = folderId;
+  const f = state.folders.find(x => x.id === folderId);
+  if (f) f.collapsed = false;
+  saveState();
+  render();
+}
+
+function fillFolderSelect(sel, value) {
+  sel.innerHTML = `<option value="">No folder</option>` +
+    state.folders.map(f => `<option value="${f.id}">${escapeHtml(f.name || "Unnamed folder")}</option>`).join("");
+  sel.value = value || "";
 }
 
 // Rows in framework order; a group's rows are shown together under its heading
@@ -949,6 +1047,7 @@ async function handleFiles(files) {
         name: guessModuleName(text, file.name),
         fileName: file.name,
         target: 50,
+        folderId: state.uploadFolderId || null,
         groups: parsed.groups,
         assessments: parsed.assessments,
       };
@@ -984,6 +1083,7 @@ $("addManualBtn").addEventListener("click", () => {
     name: "New module",
     fileName: "",
     target: 50,
+    folderId: state.uploadFolderId || null,
     groups: [],
     assessments: [
       { id: uid(), name: "Test 1", weight: 25, mark: "", isFinal: false, groupId: null },
@@ -999,6 +1099,35 @@ $("addManualBtn").addEventListener("click", () => {
 });
 
 $("addRowBtn").addEventListener("click", () => addAssessment(currentModule(), null));
+
+// Folders
+$("addFolderBtn").addEventListener("click", () => {
+  const f = { id: uid(), name: `Semester ${state.folders.length + 1}`, collapsed: false };
+  state.folders.push(f);
+  saveState();
+  render();
+  const input = document.querySelector(`.folder[data-fid="${f.id}"] .folder-name`);
+  if (input) { input.focus(); input.select(); }
+});
+
+$("uploadFolder").addEventListener("change", e => {
+  state.uploadFolderId = e.target.value || null;
+  saveState();
+});
+
+$("moduleFolder").addEventListener("change", e => moveModule(currentModule().id, e.target.value || null));
+
+// Dropping a module on the list itself (not on a folder) takes it out of its folder
+const moduleListEl = $("moduleList");
+moduleListEl.addEventListener("dragover", e => {
+  if (e.dataTransfer.types.includes("text/module-id")) e.preventDefault();
+});
+moduleListEl.addEventListener("drop", e => {
+  const id = e.dataTransfer.getData("text/module-id");
+  if (!id) return;
+  e.preventDefault();
+  moveModule(id, null);
+});
 
 $("addGroupBtn").addEventListener("click", () => {
   const mod = currentModule();
@@ -1056,8 +1185,7 @@ $("importInput").addEventListener("change", async e => {
     const data = JSON.parse(await file.text());
     if (!data || !Array.isArray(data.modules)) throw new Error("Not a Mark Calculator backup.");
     if (!confirm("Replace your current modules with this backup?")) return;
-    data.modules.forEach(m => (m.groups = m.groups || []));
-    state = data;
+    state = upgradeState(data);
     saveState();
     render();
   } catch (err) {
