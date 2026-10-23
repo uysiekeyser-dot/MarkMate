@@ -1264,7 +1264,7 @@ function groupRow(mod, g) {
     <td><input type="text" class="in-gname" aria-label="Group name"><span class="sub">Group</span></td>
     <td class="num" data-label="Weight %"><input type="number" class="in-weight in-gweight" min="0" max="100" step="any" aria-label="Group weight"><span class="sub">of final mark</span></td>
     <td colspan="3" class="group-info"></td>
-    <td class="center"><button class="del" title="Remove group (keeps its assessments)">✕</button></td>`;
+    <td class="center"><button class="del" title="Remove group (keeps its assessments)" aria-label="Remove group"><i class="ti ti-x"></i></button></td>`;
   const nameIn = tr.querySelector(".in-gname");
   const weightIn = tr.querySelector(".in-gweight");
   nameIn.value = g.name;
@@ -1297,7 +1297,7 @@ function assessmentRow(mod, a) {
     <td class="num" data-label="Your mark"><input type="text" class="in-mark" inputmode="decimal" placeholder="–" aria-label="Your mark"><span class="mark-pct"></span></td>
     <td class="num contrib" data-label="Counts for"></td>
     <td class="center" data-label="Final"><input type="radio" name="finalPick" class="in-final" aria-label="This is the final test"></td>
-    <td class="center"><button class="del" title="Remove">✕</button></td>`;
+    <td class="center"><button class="del" title="Remove" aria-label="Remove"><i class="ti ti-x"></i></button></td>`;
 
   const nameIn = tr.querySelector(".in-name");
   const weightIn = tr.querySelector(".in-aweight");
