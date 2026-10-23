@@ -857,624 +857,6 @@ function calculate(mod) {
 
 const fmt = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString();
 
-// ---------- Rendering ----------
-
-const $ = id => document.getElementById(id);
-
-// Phones and small tablets show either the list or the open module, not both
-const onPhone = () => matchMedia("(max-width: 800px)").matches;
-
-// Opens a module and closes every folder except its own. openModule(null) goes back to the
-// clean list with all folders closed.
-function openModule(id) {
-  state.selectedId = id;
-  const mod = currentModule();
-  state.folders.forEach(f => (f.collapsed = !mod || f.id !== mod.folderId));
-  if (state.modules.length) $("addPanel").hidden = true;
-  saveState();
-  render();
-  if (onPhone()) window.scrollTo({ top: 0 });
-}
-const showModuleOnPhone = () => { if (state.selectedId) openModule(state.selectedId); };
-
-function render() {
-  renderModuleList();
-  renderAiState();
-  const mod = currentModule();
-  $("layout").classList.toggle("module-open", !!mod);
-  $("layout").classList.toggle("no-modules", !state.modules.length);
-  if (!state.modules.length) $("addPanel").hidden = false;
-  $("welcome").hidden = !!mod;
-  $("moduleView").hidden = !mod;
-  if (!mod) return;
-
-  $("moduleName").value = mod.name;
-  $("moduleSource").textContent = mod.fileName
-    ? `Read from: ${mod.fileName}${mod.readBy === "ai" ? ` · read by AI${mod.aiInput === "pdf" ? " from the PDF" : ""}` : ""}`
-    : "Added manually";
-  fillFolderSelect($("moduleFolder"), mod.folderId);
-  renderRules(mod);
-  renderDatesEditor(mod);
-  $("targetInput").value = mod.target;
-  renderTable(mod);
-  updateResults();
-}
-
-// ---- Key dates: each module's next date under its name, and its full list on its page ----
-
-const todayIso = () => {
-  const t = new Date();
-  return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
-};
-const daysUntil = iso => {
-  const [y, m, d] = iso.split("-").map(Number);
-  const t = new Date();
-  return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
-};
-const shortDate = iso => {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
-};
-const countdown = days =>
-  days < 0 ? "done" : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
-
-const dateClass = days => (days < 0 ? "past" : days === 0 ? "today" : days <= 7 ? "soon" : "");
-
-// The module's next date that hasn't passed yet
-function nextDate(mod) {
-  return (mod.dates || [])
-    .filter(d => d.date && d.label)
-    .map(d => ({ ...d, days: daysUntil(d.date) }))
-    .filter(d => d.days >= 0)
-    .sort((a, b) => a.days - b.days)[0] || null;
-}
-
-// The countdowns follow the calendar: redraw when the day changes or the app is shown again
-let keyDatesDay = todayIso();
-const refreshKeyDatesIfNewDay = () => {
-  if (todayIso() === keyDatesDay) return;
-  keyDatesDay = todayIso();
-  renderModuleList();
-  const mod = currentModule();
-  if (mod) renderDatesEditor(mod);
-};
-setInterval(refreshKeyDatesIfNewDay, 60 * 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshKeyDatesIfNewDay(); });
-
-// The module page's own list of dates, to fix or add dates
-function renderDatesEditor(mod) {
-  mod.dates = mod.dates || [];
-  $("datesCount").textContent = mod.dates.length ? `(${mod.dates.length})` : "";
-  const list = $("datesEdit");
-  const sorted = [...mod.dates].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  list.replaceChildren(...sorted.map(d => {
-    const li = document.createElement("li");
-    li.innerHTML = `<input type="text" class="de-label" aria-label="What" placeholder="e.g. Test 1">
-      <input type="date" class="de-date" aria-label="Date">
-      <span class="de-count muted small"></span>
-      <button class="del" title="Remove date" aria-label="Remove date"><i class="ti ti-x"></i></button>`;
-    const label = li.querySelector(".de-label");
-    const date = li.querySelector(".de-date");
-    const count = li.querySelector(".de-count");
-    const showCount = () => {
-      const days = d.date ? daysUntil(d.date) : null;
-      count.textContent = days === null ? "" : countdown(days);
-      li.className = days === null ? "" : dateClass(days);
-    };
-    label.value = d.label;
-    date.value = d.date || "";
-    showCount();
-    label.addEventListener("input", () => { d.label = label.value; saveState(); renderModuleList(); });
-    date.addEventListener("change", () => { d.date = date.value; showCount(); saveState(); renderModuleList(); });
-    li.querySelector(".del").addEventListener("click", () => {
-      mod.dates = mod.dates.filter(x => x.id !== d.id);
-      saveState();
-      renderDatesEditor(mod);
-      renderModuleList();
-    });
-    return li;
-  }));
-}
-
-// Notes about how the framework was read, and the pass rules found in it
-function renderRules(mod) {
-  const notes = mod.notes || [];
-  const rules = mod.rules || [];
-  const box = $("rulesBox");
-  box.hidden = !notes.length && !rules.length;
-  // Closed unless there's something the student must know (and always closed on a phone: it's long)
-  box.open = notes.length > 0 && !onPhone();
-  $("rulesCount").textContent = rules.length ? `(${rules.length})` : "";
-  $("rulesList").innerHTML =
-    notes.map(n => `<li class="rule-note">${escapeHtml(n)}</li>`).join("") +
-    rules.map(r => `<li>${escapeHtml(r)}</li>`).join("");
-}
-
-// Folders first (each with its modules), then the modules that aren't in a folder
-function renderModuleList() {
-  const list = $("moduleList");
-  list.innerHTML = "";
-  $("noModules").hidden = state.modules.length > 0;
-  $("dragHint").hidden = !(state.folders.length > 1 || state.modules.length > 1);
-  $("uploadFolderPick").hidden = !state.folders.length;
-  fillFolderSelect($("uploadFolder"), state.uploadFolderId);
-
-  for (const f of state.folders) list.appendChild(folderItem(f));
-  state.modules.filter(m => !m.folderId).forEach(m => list.appendChild(moduleItem(m)));
-}
-
-// Bar and percentage: the final mark earned so far (green once it reaches the goal).
-// Under it, the module's next key date.
-function paintModuleRow(row, mod) {
-  const c = calculate(mod);
-  const passed = c.finalSoFar > 0 && c.finalSoFar >= (Number(mod.target) || 50);
-  row.querySelector(".m-name").textContent = mod.name || "Untitled module";
-  const mark = row.querySelector(".m-mark");
-  mark.textContent = fmt(c.finalSoFar) + "%";
-  mark.classList.toggle("passed", passed);
-  const bar = row.querySelector(".m-bar i");
-  bar.style.width = Math.max(0, Math.min(100, c.finalSoFar)) + "%";
-  bar.classList.toggle("passed", passed);
-  const next = nextDate(mod);
-  const nextEl = row.querySelector(".m-next");
-  nextEl.hidden = !next;
-  if (next) {
-    nextEl.className = "m-next " + dateClass(next.days);
-    nextEl.querySelector("span").textContent = `${next.label} · ${shortDate(next.date)} · ${countdown(next.days)}`;
-  }
-}
-
-function moduleItem(mod) {
-  const li = document.createElement("li");
-  li.className = "mod-item";
-  li.dataset.mid = mod.id;
-  li.innerHTML = `
-    <button class="mod-btn">
-      <span class="m-top"><span class="m-name"></span><span class="m-mark"></span></span>
-      <span class="m-bar"><i></i></span>
-      <span class="m-next" hidden><i class="ti ti-calendar-event"></i><span></span></span>
-    </button>
-    <span class="sort-handle" title="Drag to reorder" aria-label="Drag to reorder"><i class="ti ti-grip-vertical"></i></span>`;
-  const btn = li.querySelector(".mod-btn");
-  btn.classList.toggle("active", mod.id === state.selectedId);
-  btn.dataset.id = mod.id;
-  paintModuleRow(li, mod);
-  btn.addEventListener("click", () => openModule(mod.id));
-
-  makeSortable(li.querySelector(".sort-handle"), li, {
-    siblings: () => [...li.parentElement.children].filter(c => c.classList.contains("mod-item")),
-    onReorder: (from, to) => {
-      const ids = [...li.parentElement.children].filter(c => c.classList.contains("mod-item")).map(c => c.dataset.mid);
-      ids.splice(to, 0, ids.splice(from, 1)[0]);
-      reorderModules(ids);
-    },
-    onDropFolder: fid => moveModule(mod.id, fid),
-  });
-  return li;
-}
-
-// Puts the given modules (all in one folder, or all outside folders) in this order
-function reorderModules(ids) {
-  const byId = Object.fromEntries(state.modules.map(m => [m.id, m]));
-  const slots = state.modules.map((m, i) => (ids.includes(m.id) ? i : -1)).filter(i => i >= 0);
-  slots.forEach((slot, k) => (state.modules[slot] = byId[ids[k]]));
-  saveState();
-  renderModuleList();
-}
-
-function folderItem(f) {
-  const mods = state.modules.filter(m => m.folderId === f.id);
-  const li = document.createElement("li");
-  li.className = "folder" + (f.collapsed ? " collapsed" : "");
-  li.dataset.fid = f.id;
-  li.innerHTML = `
-    <div class="folder-head" role="button" tabindex="0" aria-expanded="${!f.collapsed}">
-      <i class="ti ti-folder folder-icon"></i>
-      <span class="folder-name"></span>
-      <span class="folder-count"></span>
-      <span class="folder-tools">
-        <button class="folder-tool rename" title="Rename folder" aria-label="Rename folder"><i class="ti ti-pencil"></i></button>
-        <button class="folder-tool del" title="Delete folder (keeps its modules)" aria-label="Delete folder"><i class="ti ti-trash"></i></button>
-      </span>
-      <span class="sort-handle" title="Drag to reorder" aria-label="Drag to reorder"><i class="ti ti-grip-vertical"></i></span>
-      <i class="ti ti-chevron-down folder-chevron"></i>
-    </div>
-    <div class="folder-body"><div><ul class="module-list folder-modules"></ul></div></div>`;
-  const head = li.querySelector(".folder-head");
-  li.querySelector(".folder-name").textContent = f.name || "Unnamed folder";
-  li.querySelector(".folder-count").textContent = mods.length;
-  const inner = li.querySelector(".folder-modules");
-  if (mods.length) mods.forEach(m => inner.appendChild(moduleItem(m)));
-  else inner.innerHTML = `<li class="folder-empty">No modules yet. Drag one onto this folder, or choose it under <b>Save to folder</b> when you upload.</li>`;
-
-  // Tap the folder to open or close it
-  const toggle = () => {
-    f.collapsed = !f.collapsed;
-    li.classList.toggle("collapsed", f.collapsed);
-    head.setAttribute("aria-expanded", String(!f.collapsed));
-    saveState();
-  };
-  head.addEventListener("click", e => {
-    if (e.target.closest(".folder-tools, .sort-handle, .folder-rename")) return;
-    toggle();
-  });
-  head.addEventListener("keydown", e => {
-    if ((e.key === "Enter" || e.key === " ") && e.target === head) { e.preventDefault(); toggle(); }
-  });
-
-  li.querySelector(".rename").addEventListener("click", () => startRenameFolder(li, f));
-  li.querySelector(".del").addEventListener("click", () => {
-    const msg = mods.length
-      ? `Delete the folder "${f.name}"? Its ${mods.length} module${mods.length > 1 ? "s" : ""} will stay, just not in a folder.`
-      : `Delete the folder "${f.name}"?`;
-    if (!confirm(msg)) return;
-    mods.forEach(m => (m.folderId = null));
-    state.folders = state.folders.filter(x => x.id !== f.id);
-    if (state.uploadFolderId === f.id) state.uploadFolderId = null;
-    saveState();
-    render();
-  });
-
-  makeSortable(li.querySelector(".sort-handle"), li, {
-    siblings: () => [...$("moduleList").children].filter(c => c.classList.contains("folder")),
-    onReorder: (from, to) => {
-      state.folders.splice(to, 0, state.folders.splice(from, 1)[0]);
-      saveState();
-      renderModuleList();
-    },
-  });
-  return li;
-}
-
-// Swaps the folder's name for a text box; Enter or tapping elsewhere saves it
-function startRenameFolder(li, f) {
-  const nameEl = li.querySelector(".folder-name");
-  const input = document.createElement("input");
-  input.className = "folder-rename";
-  input.value = f.name;
-  input.setAttribute("aria-label", "Folder name");
-  nameEl.replaceWith(input);
-  input.focus();
-  input.select();
-  let done = false;
-  const save = () => {
-    if (done) return;
-    done = true;
-    f.name = input.value.trim() || f.name || "Unnamed folder";
-    saveState();
-    renderModuleList();
-    const mod = currentModule();
-    if (mod) fillFolderSelect($("moduleFolder"), mod.folderId);
-  };
-  input.addEventListener("keydown", e => {
-    if (e.key === "Escape") input.value = f.name;
-    if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); save(); }
-  });
-  input.addEventListener("blur", save);
-}
-
-function moveModule(moduleId, folderId) {
-  const mod = state.modules.find(m => m.id === moduleId);
-  if (!mod || mod.folderId === folderId) return;
-  mod.folderId = folderId;
-  saveState();
-  render();
-}
-
-// Drag to reorder, by the ⋮⋮ handle. Uses pointer events, so it works with a mouse and a finger.
-// onDropFolder: dropping on another folder's heading moves the item into that folder.
-function makeSortable(handle, item, { siblings, onReorder, onDropFolder }) {
-  handle.addEventListener("click", e => e.stopPropagation());
-  handle.addEventListener("pointerdown", e => {
-    if (e.button !== undefined && e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const items = siblings();
-    const from = items.indexOf(item);
-    if (from < 0) return;
-    const rects = items.map(el => { const r = el.getBoundingClientRect(); return { top: r.top + window.scrollY, height: r.height }; });
-    const gap = items.length > 1 ? Math.max(0, rects[1].top - (rects[0].top + rects[0].height)) : 8;
-    const startY = e.clientY + window.scrollY;
-    let to = from, folderTarget = null, moved = false;
-
-    item.classList.add("dragging");
-    document.body.classList.add("is-dragging");
-    items.forEach(el => el !== item && el.classList.add("drag-shift"));
-    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-
-    const clearTargets = () => document.querySelectorAll(".folder.drop-target").forEach(el => el.classList.remove("drop-target"));
-    const move = ev => {
-      const dy = ev.clientY + window.scrollY - startY;
-      if (Math.abs(dy) > 4) moved = true;
-      item.style.transform = `translateY(${dy}px)`;
-      const middle = rects[from].top + rects[from].height / 2 + dy;
-      to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < middle).length;
-      const step = rects[from].height + gap;
-      items.forEach((el, i) => {
-        if (i === from) return;
-        const shift = i > from && i <= to ? -step : i < from && i >= to ? step : 0;
-        el.style.transform = shift ? `translateY(${shift}px)` : "";
-      });
-      if (onDropFolder) {
-        const head = document.elementsFromPoint(ev.clientX, ev.clientY)
-          .map(el => el.closest && el.closest(".folder-head"))
-          .find(h => h && !item.contains(h) && !h.closest(".folder").contains(item));
-        clearTargets();
-        folderTarget = head ? head.closest(".folder").dataset.fid : null;
-        if (head) head.closest(".folder").classList.add("drop-target");
-      }
-      // Keep scrolling while dragging near the top or bottom of the screen
-      if (ev.clientY < 80) window.scrollBy(0, -10);
-      else if (ev.clientY > window.innerHeight - 80) window.scrollBy(0, 10);
-    };
-    const end = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
-      document.body.classList.remove("is-dragging");
-      item.classList.remove("dragging");
-      item.style.transform = "";
-      items.forEach(el => { el.style.transform = ""; el.classList.remove("drag-shift"); });
-      clearTargets();
-      if (folderTarget) onDropFolder(folderTarget);
-      else if (moved && to !== from) onReorder(from, to);
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
-  });
-}
-
-function fillFolderSelect(sel, value) {
-  sel.innerHTML = `<option value="">No folder</option>` +
-    state.folders.map(f => `<option value="${f.id}">${escapeHtml(f.name || "Unnamed folder")}</option>`).join("");
-  sel.value = value || "";
-}
-
-// Rows in framework order; a group's rows are shown together under its heading
-function renderTable(mod) {
-  const body = $("assessBody");
-  body.innerHTML = "";
-  const shown = new Set();
-
-  const renderGroup = g => {
-    shown.add(g.id);
-    body.appendChild(groupRow(mod, g));
-    mod.assessments.filter(a => a.groupId === g.id).forEach(a => body.appendChild(assessmentRow(mod, a)));
-    const addTr = document.createElement("tr");
-    addTr.className = "group-add";
-    addTr.innerHTML = `<td colspan="6"><button class="link-btn">+ Add to this group</button></td>`;
-    addTr.querySelector("button").addEventListener("click", () => addAssessment(mod, g.id));
-    body.appendChild(addTr);
-  };
-
-  for (const a of mod.assessments) {
-    const g = groupOf(mod, a);
-    if (!g) body.appendChild(assessmentRow(mod, a));
-    else if (!shown.has(g.id)) renderGroup(g);
-  }
-  mod.groups.filter(g => !shown.has(g.id)).forEach(renderGroup);
-}
-
-function groupRow(mod, g) {
-  const tr = document.createElement("tr");
-  tr.className = "group-row";
-  tr.dataset.gid = g.id;
-  tr.innerHTML = `
-    <td><input type="text" class="in-gname" aria-label="Group name"><span class="sub">Group</span></td>
-    <td class="num" data-label="Weight %"><input type="number" class="in-weight in-gweight" min="0" max="100" step="any" aria-label="Group weight"><span class="sub">of final mark</span></td>
-    <td colspan="3" class="group-info"></td>
-    <td class="center"><button class="del" title="Remove group (keeps its assessments)" aria-label="Remove group"><i class="ti ti-x"></i></button></td>`;
-  const nameIn = tr.querySelector(".in-gname");
-  const weightIn = tr.querySelector(".in-gweight");
-  nameIn.value = g.name;
-  weightIn.value = g.weight;
-  nameIn.addEventListener("input", () => { g.name = nameIn.value; saveState(); updateResults(); });
-  weightIn.addEventListener("input", () => { g.weight = parseFloat(weightIn.value) || 0; saveState(); updateResults(); });
-  tr.querySelector(".del").addEventListener("click", () => {
-    // Keep the assessments, now counting directly towards the final mark
-    mod.assessments.forEach(a => {
-      if (a.groupId === g.id) {
-        a.weight = Math.round(effectiveWeight(mod, a) * 10000) / 10000;
-        a.groupId = null;
-      }
-    });
-    mod.groups = mod.groups.filter(x => x.id !== g.id);
-    saveState();
-    render();
-  });
-  return tr;
-}
-
-function assessmentRow(mod, a) {
-  const g = groupOf(mod, a);
-  const tr = document.createElement("tr");
-  tr.dataset.id = a.id;
-  if (g) tr.classList.add("in-group");
-  tr.innerHTML = `
-    <td class="name-cell"><input type="text" class="in-name" aria-label="Assessment name"></td>
-    <td class="num" data-label="Weight %"><input type="number" class="in-weight in-aweight" min="0" max="100" step="any" aria-label="Weight"><span class="sub">${g ? "of group" : ""}</span></td>
-    <td class="num" data-label="Your mark"><input type="text" class="in-mark" inputmode="decimal" placeholder="–" aria-label="Your mark"><span class="mark-pct"></span></td>
-    <td class="num contrib" data-label="Counts for"></td>
-    <td class="center" data-label="Final"><input type="radio" name="finalPick" class="in-final" aria-label="This is the final test"></td>
-    <td class="center"><button class="del" title="Remove" aria-label="Remove"><i class="ti ti-x"></i></button></td>`;
-
-  const nameIn = tr.querySelector(".in-name");
-  const weightIn = tr.querySelector(".in-aweight");
-  const markIn = tr.querySelector(".in-mark");
-  const finalIn = tr.querySelector(".in-final");
-
-  nameIn.value = a.name;
-  weightIn.value = a.weight;
-  markIn.value = a.mark;
-  finalIn.checked = !!a.isFinal;
-
-  // Move an assessment into or out of a group
-  if (mod.groups.length) {
-    const sel = document.createElement("select");
-    sel.className = "in-group-pick";
-    sel.setAttribute("aria-label", "Group");
-    sel.innerHTML = `<option value="">Not in a group</option>` +
-      mod.groups.map(x => `<option value="${x.id}">In: ${escapeHtml(x.name || "Unnamed group")}</option>`).join("");
-    sel.value = a.groupId || "";
-    sel.addEventListener("change", () => { a.groupId = sel.value || null; saveState(); render(); });
-    tr.querySelector(".name-cell").appendChild(sel);
-  }
-
-  nameIn.addEventListener("input", () => { a.name = nameIn.value; saveState(); updateResults(); });
-  weightIn.addEventListener("input", () => { a.weight = parseFloat(weightIn.value) || 0; saveState(); updateResults(); });
-  markIn.addEventListener("input", () => { a.mark = markIn.value; saveState(); updateResults(); });
-  finalIn.addEventListener("change", () => {
-    mod.assessments.forEach(x => (x.isFinal = x.id === a.id));
-    saveState();
-    updateResults();
-  });
-  tr.querySelector(".del").addEventListener("click", () => {
-    mod.assessments = mod.assessments.filter(x => x.id !== a.id);
-    saveState();
-    render();
-  });
-  return tr;
-}
-
-function addAssessment(mod, groupId) {
-  const a = { id: uid(), name: "", weight: 0, mark: "", isFinal: !mod.assessments.length, groupId: groupId || null };
-  // Put it after the last row of its group so it shows up there
-  const lastIdx = groupId ? mod.assessments.map(x => x.groupId).lastIndexOf(groupId) : -1;
-  if (lastIdx >= 0) mod.assessments.splice(lastIdx + 1, 0, a);
-  else mod.assessments.push(a);
-  saveState();
-  render();
-  const input = document.querySelector(`tr[data-id="${a.id}"] .in-name`);
-  if (input) input.focus();
-}
-
-// Updates numbers without rebuilding the table, so typing isn't interrupted
-function updateResults() {
-  const mod = currentModule();
-  if (!mod) return;
-  const c = calculate(mod);
-
-  // Per-row values
-  for (const r of c.rows) {
-    const tr = document.querySelector(`tr[data-id="${r.a.id}"]`);
-    if (!tr) continue;
-    tr.classList.toggle("is-final", !!r.a.isFinal);
-    const markIn = tr.querySelector(".in-mark");
-    const pctLabel = tr.querySelector(".mark-pct");
-    const contrib = tr.querySelector(".contrib");
-    markIn.classList.toggle("invalid", Number.isNaN(r.pct));
-    const isFraction = String(r.a.mark).includes("/");
-    pctLabel.textContent = isFraction && hasMark(r) ? `= ${fmt(r.pct)}%` : "";
-    contrib.textContent = hasMark(r)
-      ? `${fmt((r.pct * r.weight) / 100, 2)} / ${fmt(r.weight, 2)}`
-      : `– / ${fmt(r.weight, 2)}`;
-  }
-
-  // Per-group values
-  for (const g of mod.groups) {
-    const info = document.querySelector(`tr[data-gid="${g.id}"] .group-info`);
-    if (!info) continue;
-    const s = c.groupStats[g.id];
-    info.textContent = s.average === null
-      ? "No marks in this group yet"
-      : `Group mark so far: ${fmt(s.average)}%`;
-  }
-
-  $("totalWeight").textContent = fmt(c.totalWeight, 2) + "%";
-  $("totalEarned").textContent = fmt(c.earned, 2);
-
-  // Warnings about weights that don't add up
-  const problems = [];
-  if (!mod.assessments.length) {
-    problems.push("No tests or assignments with weights were found in this file. Add them with \"+ Add assessment\" (and \"+ Add group\" if your module has parts like a class mark).");
-  } else {
-    for (const g of mod.groups) {
-      const label = `"${g.name || "Unnamed group"}"`;
-      if (!(Number(g.weight) > 0)) problems.push(`Enter how much ${label} counts towards your final mark.`);
-      const inner = c.groupStats[g.id].inner;
-      if (Math.abs(inner - 100) > 0.01) problems.push(`The assessments in ${label} add up to ${fmt(inner, 2)}% of the group, not 100%.`);
-    }
-    if (Math.abs(c.totalWeight - 100) > 0.01) {
-      problems.push(`Everything adds up to ${fmt(c.totalWeight, 2)}% of the final mark, not 100%. Check the weights against your module framework. (Results are scaled to 100% for now.)`);
-    }
-  }
-  const warn = $("weightWarning");
-  warn.hidden = !problems.length;
-  warn.innerHTML = problems.map(p => `<span>${escapeHtml(p)}</span>`).join("");
-
-  // Stats
-  $("statFinal").textContent = fmt(c.finalSoFar) + "%";
-  $("finalBar").style.width = Math.max(0, Math.min(100, c.finalSoFar)) + "%";
-  $("statFinalSub").textContent = "earned out of 100%";
-  $("statAvg").textContent = c.average === null ? "–" : fmt(c.average) + "%";
-  $("statAvgSub").textContent = c.average === null ? "No marks yet" : "on the work you've done";
-  $("statDone").textContent = fmt(c.donePct) + "%";
-  $("progressBar").style.width = Math.min(100, c.donePct) + "%";
-
-  // Chips
-  document.querySelectorAll(".chip").forEach(ch =>
-    ch.classList.toggle("active", Number(ch.dataset.target) === Number(mod.target)));
-
-  renderNeeded(mod, c);
-
-  // Keep the module's row in the list in sync (mark, bar, name)
-  const row = document.querySelector(`.mod-item[data-mid="${mod.id}"]`);
-  if (row) paintModuleRow(row, mod);
-}
-
-function renderNeeded(mod, c) {
-  const box = $("neededResult");
-  const target = Number(mod.target) || 0;
-  box.className = "needed-result";
-
-  if (!c.finalRow) {
-    box.classList.add("info");
-    box.innerHTML = `<p>Choose your last test of the semester in the <b>Final test</b> column.</p>`;
-    return;
-  }
-  const finalName = escapeHtml(c.finalRow.a.name || "the final test");
-
-  // Final test already written: show the result
-  if (hasMark(c.finalRow) && !c.missing.length) {
-    const ok = c.finalSoFar >= target;
-    box.classList.add(ok ? "good" : "bad");
-    box.innerHTML = `<p>Your final mark for this module</p>
-      <span class="big">${fmt(c.finalSoFar)}%</span>
-      <p>${ok ? `You reached your goal of ${target}%. Well done!` : `This is below your goal of ${target}%.`}</p>`;
-    return;
-  }
-
-  if (c.missing.length) {
-    box.classList.add("info");
-    const names = c.missing.map(r => escapeHtml(r.a.name || "Unnamed")).join(", ");
-    box.innerHTML = `<p>Enter your marks for <b>${names}</b> and you'll see the mark you need in <b>${finalName}</b> here.</p>`;
-    return;
-  }
-
-  const n = c.needed;
-  if (n <= 0) {
-    box.classList.add("good");
-    box.innerHTML = `<p>You need in ${finalName}</p>
-      <span class="big">0%</span>
-      <p>You already have enough for ${target}%. (Check if your module has a sub-minimum for ${finalName}.)</p>`;
-  } else if (n > 100) {
-    box.classList.add("bad");
-    const best = c.finalSoFar + (c.finalRow.weight * (100 / c.totalWeight));
-    box.innerHTML = `<p>You would need in ${finalName}</p>
-      <span class="big">${fmt(n)}%</span>
-      <p>That's more than 100%, so ${target}% isn't reachable. The highest final mark you can still get is ${fmt(best)}%.</p>`;
-  } else {
-    box.classList.add(n > 75 ? "bad" : "good");
-    box.innerHTML = `<p>To finish with ${target}%, you need in ${finalName}</p>
-      <span class="big">${fmt(n)}%</span>
-      <p>${finalName} counts ${fmt(c.finalRow.weight, 2)}% of your final mark.</p>`;
-  }
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-}
 
 // ---------- Saved framework PDFs ----------
 // Each uploaded PDF is kept in the browser's IndexedDB (localStorage is too small for files),
@@ -1779,16 +1161,1680 @@ function fromAiAnswer(answer) {
   return { name: String(answer.moduleName || "").trim().slice(0, 60), groups: usedGroups, assessments, notes, rules, dates };
 }
 
-// Shows whether the AI reader is on, in the menu and on the module page
+// ---------- Screens ----------
+// Phone-first screens: the intro, My modules, Key dates, Add a module, Reading the framework,
+// Check the weights, the module page, the mark sheet and the delete dialog.
+// Only these draw the page; reading frameworks and the calculations above are unchanged.
+
+const $ = id => document.getElementById(id);
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+const esc = escapeHtml;
+
+// Line icons (stroke 1.5), drawn inline so they work offline
+const ICONS = {
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  chevL: '<path d="m15 18-6-6 6-6"/>',
+  cal: '<rect x="3" y="4" width="18" height="18"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+  more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/>',
+  pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  grip: '<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01" stroke-width="2.6"/>',
+  sparkles: '<path d="M12 3l1.9 5.8L20 10.7l-6.1 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9z"/><path d="M19 3v4M17 5h4"/>',
+  phone: '<rect x="6" y="2" width="12" height="20"/><path d="M12 18h.01" stroke-width="2.4"/>',
+  folderPlus: '<path d="M3 5h6l2 2h10v12H3z"/><path d="M12 10v6M9 13h6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8M12 17v4"/>',
+  camera: '<path d="M14.5 4h-5L7 7H3v13h18V7h-4z"/><circle cx="12" cy="13" r="3"/>',
+  hand: '<path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"/>',
+};
+const ic = (name, size = 18) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+// The "+" registration marks on framed objects
+const CORNERS = '<i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>';
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const r1 = n => fmt(n, 1);
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { /* ignore */ } };
+const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
+
+// What's on screen right now (not saved)
+const ui = {
+  screen: "modules", from: "modules", anim: "", ob: 0,
+  addMode: "upload", pasteText: "",
+  queue: [], queueTotal: 0, job: null, draft: null,
+  editing: null, whatIf: false, wi: {},
+};
+
+// ---- Dates ----
+
+const todayIso = () => {
+  const t = new Date();
+  return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
+};
+const daysUntil = iso => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
+};
+const dayMonth = iso => { const [, m, d] = iso.split("-").map(Number); return `${d} ${MON[m - 1]}`; };
+const whenText = n => n === 0 ? "Today" : n === 1 ? "Tomorrow" : n < 0 ? `${-n} days ago` : `in ${n} days`;
+
+// The module's next date that hasn't passed yet
+function nextDate(mod) {
+  return (mod.dates || [])
+    .filter(d => d.date && d.label)
+    .map(d => ({ ...d, days: daysUntil(d.date) }))
+    .filter(d => d.days >= 0)
+    .sort((a, b) => a.days - b.days)[0] || null;
+}
+
+// Every module's coming dates, soonest first
+function upcomingDates() {
+  const out = [];
+  state.modules.forEach(m => (m.dates || []).forEach(d => {
+    if (!d.date || !d.label) return;
+    const n = daysUntil(d.date);
+    if (n >= 0) out.push({ m, d, n });
+  }));
+  return out.sort((a, b) => a.n - b.n);
+}
+
+// The assessment a key date is about ("Test 1" -> the Test 1 row), if any
+const assessmentFor = (mod, label) =>
+  mod.assessments.find(a => norm(a.name) === norm(label)) || mod.assessments.find(a => sameName(a.name, label)) || null;
+const dateFor = (mod, a) => (mod.dates || []).find(d => d.date && d.label && (norm(d.label) === norm(a.name) || sameName(d.label, a.name)));
+
+// The countdowns follow the calendar: redraw when the day changes or the app is shown again
+let shownDay = todayIso();
+const redrawIfNewDay = () => {
+  if (todayIso() === shownDay) return;
+  shownDay = todayIso();
+  if (["modules", "dates", "module"].includes(ui.screen)) render();
+};
+setInterval(redrawIfNewDay, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) redrawIfNewDay(); });
+
+// ---- Module names: "PP 344 Plant Pathology" shows as code PP 344 and name Plant Pathology ----
+
+function splitName(name) {
+  const s = String(name || "").trim();
+  const m = s.match(/^([A-Za-z]{2,10}\s?\d{3}[A-Za-z]?)\b[\s:·–-]*(.*)$/);
+  return m && m[2] ? { code: m[1].toUpperCase(), title: m[2] } : { code: "", title: s || "Untitled module" };
+}
+const joinName = (code, title) => [String(code || "").trim(), String(title || "").trim()].filter(Boolean).join(" ");
+
+// ---- Where a module stands ----
+
+// calculate() plus what's still to come and what's needed on it (as an average on the rest,
+// or in the final test once that's the only thing left). Weights that don't add up to 100%
+// are scaled, like the final mark itself.
+function plan(mod, goalOverride) {
+  const c = calculate(mod);
+  const goal = Number(goalOverride ?? mod.target) || 0;
+  const scale = c.totalWeight > 0 ? 100 / c.totalWeight : 0;
+  const pending = c.rows.filter(r => r.weight > 0 && !hasMark(r));
+  const rem = pending.reduce((s, r) => s + r.weight, 0);
+  const need = rem > 1e-6 && scale ? ((goal / scale - c.earned) / rem) * 100 : null;
+  const onlyFinal = !!c.finalRow && pending.length === 1 && pending[0] === c.finalRow;
+  return { ...c, goal, scale, pending, rem, remPct: rem * scale, need, onlyFinal };
+}
+
+function statusOf(mod) {
+  const p = plan(mod);
+  if (!p.rows.length) return { text: "No assessments yet", bad: false };
+  if (p.need === null) return p.finalSoFar >= p.goal ? { text: "Passed" } : { text: "Below goal", bad: true };
+  if (p.need <= 0) return { text: "Goal reached" };
+  if (p.need > 100) return { text: "Goal out of reach", bad: true };
+  const sub = p.onlyFinal ? Number(p.finalRow.a.subMin) || 0 : 0;
+  const n = Math.ceil(Math.max(p.need, sub));
+  return { text: p.onlyFinal ? `Need ${n}% in ${shortLabel(p.finalRow.a.name)}` : `Need ${n}% avg on rest`, bad: p.need > 70 };
+}
+const shortLabel = s => {
+  s = String(s || "the final test").replace(/\s*\([^)]*\)\s*$/, "") || String(s);
+  return s.length > 16 ? s.slice(0, 15) + "…" : s;
+};
+
+// ---- Navigation ----
+
+const SCREENS = {
+  onboarding: "scrOnboarding", modules: "scrModules", dates: "scrDates", add: "scrAdd",
+  reading: "scrReading", review: "scrReview", module: "scrModule",
+};
+const DEPTH = { onboarding: 0, modules: 1, dates: 1, add: 2, module: 2, reading: 3, review: 4 };
+
+// Deeper screens slide in from the right, going back slides from the left, tabs fade
+function go(screen, extra = {}) {
+  const prev = ui.screen;
+  const dir = prev === "review" && screen === "module" ? 1 : Math.sign((DEPTH[screen] ?? 1) - (DEPTH[prev] ?? 1));
+  ui.anim = prev === screen ? "" : dir > 0 ? "push" : dir < 0 ? "pop" : "fade";
+  if (prev === "reading" && screen !== "reading") clearInterval(ui.scanTimer);
+  closeSheetNow();
+  closeMenu();
+  Object.assign(ui, { screen, editing: null }, extra);
+  render();
+  window.scrollTo(0, 0);
+}
+
+function render() {
+  const s = ui.screen;
+  for (const [key, id] of Object.entries(SCREENS)) $(id).hidden = key !== s;
+  $("tabBar").hidden = !(s === "modules" || s === "dates");
+  const el = $(SCREENS[s]);
+  ({
+    onboarding: renderOnboarding, modules: renderModules, dates: renderDates, add: renderAdd,
+    reading: renderReading, review: renderReview, module: renderModulePage,
+  })[s](el);
+  renderTabs();
+  if (ui.anim) {
+    el.classList.remove("anim-push", "anim-pop", "anim-fade");
+    void el.offsetWidth; // restart the animation
+    el.classList.add("anim-" + ui.anim);
+    ui.anim = "";
+  }
+}
+
+function renderTabs() {
+  $("tabBar").innerHTML = [["Modules", "modules"], ["Key dates", "dates"]].map(([label, key]) =>
+    `<button class="tab${ui.screen === key ? " on" : ""}" data-act="tab" data-to="${key}"><i></i>${label}</button>`).join("");
+}
+
+// Opens a module and closes every folder except its own
+function openModule(id, from = "modules") {
+  state.selectedId = id;
+  const mod = currentModule();
+  if (!mod) return go("modules");
+  state.folders.forEach(f => (f.collapsed = f.id !== mod.folderId));
+  saveState();
+  go("module", { from, whatIf: false, wi: {} });
+}
+
+// Back to the list: every folder closes again, so the list stays clean
+function leaveModule() {
+  const to = ui.from === "dates" ? "dates" : "modules";
+  state.selectedId = null;
+  state.folders.forEach(f => (f.collapsed = true));
+  saveState();
+  go(to);
+}
+
+// ---- Clicks, typing and changes, for every screen ----
+
+const ACTIONS = {};
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-act]");
+  if (t && ACTIONS[t.dataset.act]) ACTIONS[t.dataset.act](t, e);
+});
+const INPUTS = {};
+document.addEventListener("input", e => {
+  const t = e.target.closest("[data-in]");
+  if (t && INPUTS[t.dataset.in]) INPUTS[t.dataset.in](t, e);
+});
+const CHANGES = {};
+document.addEventListener("change", e => {
+  const t = e.target.closest("[data-ch]");
+  if (t && CHANGES[t.dataset.ch]) CHANGES[t.dataset.ch](t, e);
+});
+
+ACTIONS.tab = t => go(t.dataset.to);
+ACTIONS["go-add"] = () => go("add");
+ACTIONS["go-modules"] = () => go("modules");
+ACTIONS["go-dates"] = () => go("dates");
+
+// ---- 1. The intro (first time only) ----
+
+const OB = [
+  ["Upload", "Upload the module framework (study guide) for each of your modules."],
+  ["Check", "The calculator finds every test and assignment with its weight. Check them and fix anything it got wrong."],
+  ["Enter", "Enter your marks as you get them. Your final mark updates straight away."],
+  ["Know", "Once every mark except the last test is entered, you'll see what you need in that test."],
+];
+
+function obFigure(step) {
+  if (step === 0) {
+    const doc = [["72%", ""], ["48%", "15%"], ["58%", "10%"], ["40%", "15%"], ["64%", "10%"], ["34%", "50%"], ["86%", ""], ["62%", ""]];
+    return `<div class="ob-art"><div class="eyebrow">Module framework · p.4</div>${doc.map(([w, p]) =>
+      `<div class="ob-line"><i style="width:${w}" class="${p ? "hit" : ""}"></i><b>${p}</b></div>`).join("")}</div>`;
+  }
+  if (step === 1) {
+    const ws = [["Class Test 1", 15], ["Assignment 1", 10], ["Class Test 2", 15], ["Practical Report", 10], ["A2", 50]];
+    return `<div class="ob-art gap12">${ws.map(([n, p]) =>
+      `<div class="ob-w"><span>${n}</span><span class="track"><i style="width:${p * 2}%"></i></span><b>${p}%</b></div>`).join("")}
+      <div class="ob-total"><span>Total</span><b>100%</b></div></div>`;
+  }
+  if (step === 2) {
+    return `<div class="ob-art gap10"><div class="eyebrow">Final mark so far</div><div class="hero76">34.8%</div>
+      <div class="bar10"><i style="width:34.8%"></i><b style="left:50%"></b></div>
+      <div class="meta13">40% of the module marked · goal 50%</div></div>`;
+  }
+  return `<div class="ob-art gap6 start"><div class="eyebrow">You need in A2</div><div class="hero96">47%</div>
+    <div>to finish on 50%. Sub-minimum 40%.</div></div>`;
+}
+
+function renderOnboarding(el) {
+  const ob = ui.ob;
+  el.innerHTML = `
+    <div class="ob">
+      <div class="row-between"><div class="brand">Mark Calculator</div><button class="link-acc pad10" data-act="ob-skip">Skip</button></div>
+      <div class="blueprint ob-fig">${CORNERS}<div class="ob-anim" key="${ob}">${obFigure(ob)}</div></div>
+      <div class="ob-text ob-anim">
+        <div class="ob-num">0${ob + 1} / 04</div>
+        <h1 class="ob-title">${OB[ob][0]}</h1>
+        <p class="ob-body">${OB[ob][1]}</p>
+      </div>
+      <div class="ob-dots">${OB.map((_, i) => `<i class="${i <= ob ? "on" : ""}"></i>`).join("")}</div>
+      <button class="blueprint btn-solid h54" data-act="ob-next">${CORNERS}${ob === 3 ? "Add your first module" : "Next"}</button>
+    </div>`;
+}
+ACTIONS["ob-next"] = () => {
+  if (ui.ob < 3) { ui.ob++; render(); return; }
+  state.onboarded = true;
+  saveState();
+  go("add");
+};
+ACTIONS["ob-skip"] = () => { state.onboarded = true; saveState(); go("modules"); };
+
+// ---- 2. My modules ----
+
+function renderModules(el) {
+  const mods = state.modules;
+  const avgs = mods.map(m => calculate(m).average).filter(x => x != null);
+  const nd = upcomingDates()[0];
+  const onTrack = mods.filter(m => { const p = plan(m); return p.need === null ? p.finalSoFar >= p.goal : p.need <= 70; }).length;
+  const loose = mods.filter(m => !m.folderId);
+
+  el.innerHTML = `
+    <div class="screen-head">
+      <h1 class="h-screen">My modules</h1>
+      <div class="head-actions">
+        <button id="menuBtn" class="sq-btn line" data-act="menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false">${ic("more", 22)}</button>
+        <button class="sq-btn solid" data-act="go-add" aria-label="Add a module">${ic("plus", 22)}</button>
+      </div>
+    </div>
+    ${mods.length ? `
+    <div class="blueprint stats2">${CORNERS}
+      <div class="cell wide"><div class="eyebrow">All modules · average on work done</div>
+        <div class="hero64">${avgs.length ? r1(avgs.reduce((a, b) => a + b, 0) / avgs.length) + "%" : "–"}</div></div>
+      <div class="cell"><div class="eyebrow">On track</div><div class="num26">${onTrack} of ${mods.length}</div></div>
+      <button class="cell press" data-act="go-dates"><div class="eyebrow">Next date</div>
+        <div class="num26 acc">${nd ? (nd.n === 0 ? "Today" : nd.n === 1 ? "Tomorrow" : nd.n + " days") : "–"}</div>
+        <div class="meta12">${nd ? `${esc(nd.d.label)} · ${esc(splitName(nd.m.name).code || splitName(nd.m.name).title)}` : "Nothing coming up"}</div></button>
+    </div>` : `
+    <div class="blueprint empty">${CORNERS}
+      <div class="eyebrow">No modules yet</div>
+      <p>Upload a module framework and the calculator finds every test and assignment with its weight.</p>
+      <button class="blueprint btn-solid" data-act="go-add">${CORNERS}Add your first module</button>
+    </div>`}
+    <ul id="moduleList" class="mod-list">
+      ${state.folders.map(folderHtml).join("")}
+      ${loose.length && state.folders.length ? `<li class="list-label">Not in a folder</li>` : ""}
+      ${loose.map(moduleRowHtml).join("")}
+    </ul>
+    <div class="list-foot">
+      <button class="link-acc" data-act="new-folder">${ic("folderPlus", 16)}New folder</button>
+      ${mods.length > 1 || state.folders.length > 1 ? `<span class="meta12">Drag ${ic("grip", 14)} to reorder</span>` : ""}
+    </div>`;
+
+  el.querySelectorAll(".folder").forEach(li => {
+    const f = state.folders.find(x => x.id === li.dataset.fid);
+    makeSortable(li.querySelector(".folder-head .sort-handle"), li, {
+      siblings: () => [...$("moduleList").children].filter(c => c.classList.contains("folder")),
+      onReorder: (from, to) => { state.folders.splice(to, 0, state.folders.splice(from, 1)[0]); saveState(); render(); },
+    });
+  });
+  el.querySelectorAll(".mod-item").forEach(li => {
+    makeSortable(li.querySelector(".sort-handle"), li, {
+      siblings: () => [...li.parentElement.children].filter(c => c.classList.contains("mod-item")),
+      onReorder: (from, to) => {
+        const ids = [...li.parentElement.children].filter(c => c.classList.contains("mod-item")).map(c => c.dataset.mid);
+        ids.splice(to, 0, ids.splice(from, 1)[0]);
+        reorderModules(ids);
+      },
+      onDropFolder: fid => moveModule(li.dataset.mid, fid),
+    });
+  });
+}
+
+function folderHtml(f) {
+  const mods = state.modules.filter(m => m.folderId === f.id);
+  const open = !f.collapsed;
+  return `
+    <li class="folder${open ? "" : " collapsed"}" data-fid="${f.id}">
+      <div class="folder-head" role="button" tabindex="0" aria-expanded="${open}" data-act="folder-toggle">
+        <span class="folder-chevron">${ic("chevR", 16)}</span>
+        <span class="folder-name">${esc(f.name || "Unnamed folder")}</span>
+        <span class="folder-tools">
+          <button class="tool" data-act="folder-rename" aria-label="Rename folder">${ic("pencil", 16)}</button>
+          <button class="tool del" data-act="folder-delete" aria-label="Delete folder">${ic("trash", 16)}</button>
+        </span>
+        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}</span>
+        <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
+      </div>
+      <div class="folder-body"><div><ul class="mod-list inner">
+        ${mods.length ? mods.map(moduleRowHtml).join("") : `<li class="folder-empty">No modules yet. Drag one onto this folder, or pick it under <b>Save to folder</b> when you add a module.</li>`}
+      </ul></div></div>
+    </li>`;
+}
+
+// Code, name, final mark so far, a bar with the goal marked, the next date and where it stands
+function moduleRowHtml(m) {
+  const p = plan(m);
+  const st = statusOf(m);
+  const { code, title } = splitName(m.name);
+  const nx = nextDate(m);
+  const next = nx ? `${esc(nx.label)} · ${whenText(nx.days).toLowerCase()}` : p.rows.length && !p.pending.length ? "All marks in" : "No dates";
+  const reached = p.finalSoFar >= p.goal && p.finalSoFar > 0;
+  return `
+    <li class="mod-item" data-mid="${m.id}">
+      <button class="mod-row" data-act="open-module" data-id="${m.id}">
+        <span class="m-top">
+          <span class="m-names">${code ? `<span class="m-code">${esc(code)}</span>` : ""}<span class="m-name">${esc(title)}</span></span>
+          <span class="m-final">${r1(p.finalSoFar)}%</span>
+        </span>
+        <span class="bar6"><i class="${reached ? "done" : ""}" style="transform:scaleX(${clamp(p.finalSoFar, 0, 100) / 100})"></i><b style="left:${clamp(p.goal, 0, 100)}%"></b></span>
+        <span class="m-foot">
+          <span class="m-next">${ic("cal", 14)}<span>${next}</span></span>
+          <span class="m-status${st.bad ? " bad" : st.text === "Goal reached" || st.text === "Passed" ? " good" : ""}">${esc(st.text)}</span>
+        </span>
+      </button>
+      <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
+    </li>`;
+}
+
+ACTIONS["open-module"] = t => openModule(t.dataset.id, "modules");
+ACTIONS["folder-toggle"] = (t, e) => {
+  if (e.target.closest(".folder-tools, .sort-handle, .folder-rename")) return;
+  const f = state.folders.find(x => x.id === t.closest(".folder").dataset.fid);
+  f.collapsed = !f.collapsed;
+  const li = t.closest(".folder");
+  li.classList.toggle("collapsed", f.collapsed);
+  t.setAttribute("aria-expanded", String(!f.collapsed));
+  saveState();
+};
+document.addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList?.contains("folder-head")) { e.preventDefault(); e.target.click(); }
+});
+ACTIONS["folder-rename"] = t => {
+  const li = t.closest(".folder");
+  startRenameFolder(li, state.folders.find(x => x.id === li.dataset.fid));
+};
+ACTIONS["folder-delete"] = t => {
+  const f = state.folders.find(x => x.id === t.closest(".folder").dataset.fid);
+  const mods = state.modules.filter(m => m.folderId === f.id);
+  const msg = mods.length
+    ? `Delete the folder "${f.name}"? Its ${mods.length} module${mods.length > 1 ? "s" : ""} will stay, just not in a folder.`
+    : `Delete the folder "${f.name}"?`;
+  if (!confirm(msg)) return;
+  mods.forEach(m => (m.folderId = null));
+  state.folders = state.folders.filter(x => x.id !== f.id);
+  if (state.uploadFolderId === f.id) state.uploadFolderId = null;
+  saveState();
+  render();
+};
+ACTIONS["new-folder"] = () => {
+  const f = { id: uid(), name: `Semester ${state.folders.length + 1}`, collapsed: false };
+  state.folders.push(f);
+  saveState();
+  render();
+  const li = document.querySelector(`.folder[data-fid="${f.id}"]`);
+  if (li) startRenameFolder(li, f);
+};
+
+// Swaps the folder's name for a text box; Enter or tapping elsewhere saves it
+function startRenameFolder(li, f) {
+  const nameEl = li.querySelector(".folder-name");
+  const input = document.createElement("input");
+  input.className = "folder-rename";
+  input.value = f.name;
+  input.setAttribute("aria-label", "Folder name");
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const save = () => {
+    if (done) return;
+    done = true;
+    f.name = input.value.trim() || f.name || "Unnamed folder";
+    saveState();
+    render();
+  };
+  input.addEventListener("click", e => e.stopPropagation());
+  input.addEventListener("keydown", e => {
+    e.stopPropagation();
+    if (e.key === "Escape") input.value = f.name;
+    if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); save(); }
+  });
+  input.addEventListener("blur", save);
+}
+
+// Puts the given modules (all in one folder, or all outside folders) in this order
+function reorderModules(ids) {
+  const byId = Object.fromEntries(state.modules.map(m => [m.id, m]));
+  const slots = state.modules.map((m, i) => (ids.includes(m.id) ? i : -1)).filter(i => i >= 0);
+  slots.forEach((slot, k) => (state.modules[slot] = byId[ids[k]]));
+  saveState();
+  render();
+}
+
+function moveModule(moduleId, folderId) {
+  const mod = state.modules.find(m => m.id === moduleId);
+  if (!mod || mod.folderId === folderId) return;
+  mod.folderId = folderId;
+  saveState();
+  render();
+}
+
+// Drag to reorder, by the grip. Uses pointer events, so it works with a mouse and a finger.
+// onDropFolder: dropping on another folder's heading moves the item into that folder.
+function makeSortable(handle, item, { siblings, onReorder, onDropFolder }) {
+  if (!handle) return;
+  handle.addEventListener("click", e => e.stopPropagation());
+  handle.addEventListener("pointerdown", e => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const items = siblings();
+    const from = items.indexOf(item);
+    if (from < 0) return;
+    const rects = items.map(el => { const r = el.getBoundingClientRect(); return { top: r.top + window.scrollY, height: r.height }; });
+    const gap = items.length > 1 ? Math.max(0, rects[1].top - (rects[0].top + rects[0].height)) : 0;
+    const startY = e.clientY + window.scrollY;
+    let to = from, folderTarget = null, moved = false;
+
+    item.classList.add("dragging");
+    document.body.classList.add("is-dragging");
+    items.forEach(el => el !== item && el.classList.add("drag-shift"));
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+
+    const clearTargets = () => document.querySelectorAll(".folder.drop-target").forEach(el => el.classList.remove("drop-target"));
+    const move = ev => {
+      const dy = ev.clientY + window.scrollY - startY;
+      if (Math.abs(dy) > 4) moved = true;
+      item.style.transform = `translateY(${dy}px)`;
+      const middle = rects[from].top + rects[from].height / 2 + dy;
+      to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < middle).length;
+      const step = rects[from].height + gap;
+      items.forEach((el, i) => {
+        if (i === from) return;
+        const shift = i > from && i <= to ? -step : i < from && i >= to ? step : 0;
+        el.style.transform = shift ? `translateY(${shift}px)` : "";
+      });
+      if (onDropFolder) {
+        const head = document.elementsFromPoint(ev.clientX, ev.clientY)
+          .map(el => el.closest && el.closest(".folder-head"))
+          .find(h => h && !item.contains(h) && !h.closest(".folder").contains(item));
+        clearTargets();
+        folderTarget = head ? head.closest(".folder").dataset.fid : null;
+        if (head) head.closest(".folder").classList.add("drop-target");
+      }
+      // Keep scrolling while dragging near the top or bottom of the screen
+      if (ev.clientY < 80) window.scrollBy(0, -10);
+      else if (ev.clientY > window.innerHeight - 100) window.scrollBy(0, 10);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      document.body.classList.remove("is-dragging");
+      item.classList.remove("dragging");
+      item.style.transform = "";
+      items.forEach(el => { el.style.transform = ""; el.classList.remove("drag-shift"); });
+      clearTargets();
+      if (folderTarget) onDropFolder(folderTarget);
+      else if (moved && to !== from) onReorder(from, to);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+}
+
+// ---- 3. Key dates (every module's coming dates) ----
+
+function renderDates(el) {
+  const items = upcomingDates();
+  const today = new Date().toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+  const groups = [["This week", x => x.n <= 7], ["Later", x => x.n > 7]]
+    .map(([label, fn]) => ({ label, items: items.filter(fn) })).filter(g => g.items.length);
+  el.innerHTML = `
+    <div class="title-block">
+      <h1 class="h-screen">Key dates</h1>
+      <div class="meta14">Read from your frameworks. Today is ${esc(today)}.</div>
+    </div>
+    ${groups.length ? groups.map(g => `
+      <div class="date-group">
+        <div class="eyebrow group-label">${g.label}</div>
+        ${g.items.map(x => {
+          const a = assessmentFor(x.m, x.d.label);
+          const { code, title } = splitName(x.m.name);
+          const soon = x.n <= 7;
+          const weight = a ? ` · ${fmt(effectiveWeight(x.m, a), 1)}% of final${a.isFinal ? " · final test" : ""}` : "";
+          return `
+          <button class="date-row press" data-act="open-module-dates" data-id="${x.m.id}">
+            <span class="date-box${soon ? " soon" : ""}"><b>${Number(x.d.date.slice(8))}</b><span>${MON[Number(x.d.date.slice(5, 7)) - 1]}</span></span>
+            <span class="date-what"><span class="date-name">${esc(x.d.label)}</span><span class="meta13">${esc(code || title)}${weight}</span></span>
+            <span class="date-when${soon ? " soon" : ""}">${whenText(x.n)}</span>
+          </button>`;
+        }).join("")}
+      </div>`).join("") : `
+      <div class="blueprint empty">${CORNERS}
+        <div class="eyebrow">Nothing coming up</div>
+        <p>Dates of tests, exams and due dates are read from each framework. You can add or fix them on a module's page.</p>
+      </div>`}`;
+}
+ACTIONS["open-module-dates"] = t => openModule(t.dataset.id, "dates");
+
+// ---- 4. Add a module ----
+
+const SAMPLE_SIMPLE = `MODULE FRAMEWORK - BIO 112: Introduction to Cell Biology
+Semester 2
+
+Assessment Plan
+
+Assessment            Weight
+Class Test 1          15%
+Assignment 1          10%
+Class Test 2          15%
+Practical Report      10%
+A2 (Final test)       50%
+
+Rules
+Students need a sub-minimum of 40% in A2 to pass the module.
+A final mark of at least 50% is required to pass.
+Late submissions will receive a penalty of 10% per day.`;
+
+const SAMPLE_GROUPS = `MODULE FRAMEWORK - CHE 132: General Chemistry
+Semester 2, 2026
+
+Class mark
+Test 1 (14 Aug)          40%
+Test 2 (25 Sep)          40%
+Tutorials                20%
+Total                    100%
+
+Final module mark = 40% class mark + 60% theory exam mark
+
+Theory exam mark (A2 assessment) on 12 Nov.
+
+Rules
+A sub-minimum of 40% for the theory exam is required.
+A final mark of at least 50% is required to pass.`;
+
+function folderOptions(value) {
+  return `<option value="">No folder</option>` +
+    state.folders.map(f => `<option value="${f.id}"${f.id === value ? " selected" : ""}>${esc(f.name || "Unnamed folder")}</option>`).join("");
+}
+
+function renderAdd(el) {
+  const upload = ui.addMode === "upload";
+  const ai = aiOn();
+  el.innerHTML = `
+    <div class="top-row"><button class="back" data-act="go-modules">${ic("chevL")}My modules</button></div>
+    <h1 class="h-screen h34">Add a module from its framework</h1>
+    <div class="seg2">
+      <button class="${upload ? "on" : ""}" data-act="add-mode" data-mode="upload">Upload</button>
+      <button class="${upload ? "" : "on"}" data-act="add-mode" data-mode="paste">Paste text</button>
+    </div>
+    ${upload ? `
+      <div id="dropPanel" class="blueprint drop">${CORNERS}
+        <span class="acc7">${ic("upload", 36)}</span>
+        <div class="h22">Upload module framework</div>
+        <div class="meta14 narrow">PDF, Word (.docx), text file${ai ? " or a photo of the page" : ""}. You can choose several at once.</div>
+        <div class="stack10">
+          <button class="blueprint btn-solid" data-act="choose-files">${CORNERS}Choose files</button>
+          <button class="btn-line" data-act="take-photo">${ic("camera", 18)}Take a photo</button>
+        </div>
+      </div>
+      ${state.folders.length ? `
+      <label class="field-row"><span class="meta14">Save to folder</span>
+        <select class="plain-select" data-ch="upload-folder">${folderOptions(state.uploadFolderId)}</select></label>` : ""}
+      <div class="meta13">${ai
+        ? "The AI reader is on: frameworks are sent to Google's Gemini AI to be read. Photos need the AI reader."
+        : "Files are read on this phone. Nothing is uploaded unless the AI reader is on (⋯ menu)."}</div>
+      <button class="link-acc" data-act="add-manual">${ic("hand", 16)}Add a module by hand instead</button>` : `
+      <div class="paste-head">
+        <span class="meta13">Paste the assessment table and rules</span>
+        <span class="row-gap12"><button class="link-acc sm" data-act="sample" data-which="simple">Simple sample</button><button class="link-acc sm" data-act="sample" data-which="groups">Sample with groups</button></span>
+      </div>
+      <textarea id="pasteBox" class="paste" spellcheck="false" data-in="paste" placeholder="Copy the assessment section of your framework and paste it here">${esc(ui.pasteText)}</textarea>
+      <button class="blueprint btn-solid" data-act="read-paste">${CORNERS}Read framework</button>`}`;
+
+  const panel = $("dropPanel");
+  if (panel) {
+    ["dragenter", "dragover"].forEach(ev => panel.addEventListener(ev, e => { e.preventDefault(); panel.classList.add("dragover"); }));
+    ["dragleave", "drop"].forEach(ev => panel.addEventListener(ev, e => { e.preventDefault(); panel.classList.remove("dragover"); }));
+    panel.addEventListener("drop", e => startJobs([...e.dataTransfer.files].map(file => ({ file }))));
+  }
+}
+ACTIONS["add-mode"] = t => { ui.addMode = t.dataset.mode; render(); };
+ACTIONS["choose-files"] = () => $("fileInput").click();
+ACTIONS["take-photo"] = () => {
+  if (!aiOn()) { showToast("Reading a photo needs the AI reader. Turn it on in the ⋯ menu on My modules."); return; }
+  $("photoInput").click();
+};
+ACTIONS.sample = t => { ui.pasteText = t.dataset.which === "groups" ? SAMPLE_GROUPS : SAMPLE_SIMPLE; render(); };
+INPUTS.paste = t => (ui.pasteText = t.value);
+ACTIONS["read-paste"] = () => {
+  if (!ui.pasteText.trim()) { showToast("Paste the framework's assessment section first."); return; }
+  startJobs([{ text: ui.pasteText, src: "Pasted text" }]);
+};
+CHANGES["upload-folder"] = t => { state.uploadFolderId = t.value || null; saveState(); };
+ACTIONS["add-manual"] = () => {
+  ui.queue = [];
+  ui.job = null;
+  ui.draft = {
+    mode: "new",
+    mod: {
+      id: uid(), name: "", fileName: "", target: 50, folderId: state.uploadFolderId || null, groups: [], notes: [], rules: [], dates: [],
+      assessments: [
+        { id: uid(), name: "Test 1", weight: 25, mark: "", isFinal: false, groupId: null },
+        { id: uid(), name: "Assignment 1", weight: 25, mark: "", isFinal: false, groupId: null },
+        { id: uid(), name: "A2 (final test)", weight: 50, mark: "", isFinal: true, groupId: null },
+      ],
+    },
+  };
+  go("review");
+};
+
+$("fileInput").addEventListener("change", e => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (files.length) startJobs(files.map(file => ({ file })));
+});
+$("photoInput").addEventListener("change", e => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (files.length) startJobs(files.map(file => ({ file })));
+});
+
+// ---- 5. Reading the framework ----
+// Each file (or the pasted text) is read with the same readers as before: the built-in reader,
+// or the AI reader when it's on. The text is then shown line by line, with the lines the
+// reader used marked, before the weights are checked.
+
+function startJobs(items) {
+  ui.queue = items.slice();
+  ui.queueTotal = items.length;
+  nextJob();
+}
+
+async function nextJob() {
+  const item = ui.queue.shift();
+  if (!item) return;
+  const src = item.file ? item.file.name : item.src;
+  const job = ui.job = {
+    src, index: ui.queueTotal - ui.queue.length, total: ui.queueTotal,
+    status: "Opening the file…", lines: null, hits: [], draft: null, pdf: null, scan: 0, done: false,
+  };
+  go("reading");
+  const setStatus = msg => { job.status = msg; if (ui.job === job && ui.screen === "reading") paintReadingStatus(); };
+  try {
+    const photo = item.file && /^image\//.test(item.file.type) ? item.file : null;
+    let text = "";
+    if (item.file && !photo) text = await extractText(item.file);
+    else if (!item.file) text = item.text;
+    const pdf = item.file && /\.pdf$/i.test(item.file.name) ? item.file : null;
+
+    let parsed = null, readBy = "built-in";
+    const notes = [];
+    if (aiOn() || photo) {
+      setStatus("The AI is reading the framework… (this can take up to a minute)");
+      try {
+        const result = photo ? await aiReadPhoto(photo, setStatus) : await aiRead(text, setStatus, pdf);
+        ({ parsed, readBy } = chooseReading(result, text));
+      } catch (err) {
+        if (photo) throw err;
+        console.warn(err);
+        notes.push(`The AI couldn't read this framework (${err.message.replace(/\.$/, "")}), so the built-in reader was used.`);
+      }
+    }
+    if (!parsed) parsed = parseFramework(text);
+    if (ui.job !== job) return; // the student went somewhere else meanwhile
+
+    const mod = {
+      id: uid(),
+      name: parsed.name || guessModuleName(text, item.file ? item.file.name : "Pasted text"),
+      fileName: item.file ? item.file.name : "",
+      pasted: !item.file || undefined,
+      readBy,
+      aiInput: readBy === "ai" ? parsed.input : undefined,
+      target: 50,
+      folderId: state.uploadFolderId || null,
+      groups: parsed.groups,
+      assessments: parsed.assessments,
+      notes: [...(parsed.notes || []), ...notes],
+      rules: parsed.rules || [],
+      dates: parsed.dates || [],
+      sourceText: text.slice(0, SOURCE_TEXT_LIMIT), // kept so the AI can read it again later
+    };
+    findSubMinimums(mod);
+    job.pdf = pdf;
+    job.draft = { mode: "new", mod };
+    job.lines = photo ? photoLines(mod) : textLines(text);
+    job.hits = lineTags(job.lines, mod);
+    job.status = "";
+    if (ui.screen === "reading") { renderReading($("scrReading")); startScan(); }
+  } catch (err) {
+    console.error(err);
+    job.error = `Could not read ${src}: ${err.message}`;
+    if (ui.screen === "reading") renderReading($("scrReading"));
+  }
+}
+
+// A photo of a framework page, read by the AI (the built-in reader can't read photos)
+async function aiReadPhoto(file, onStatus) {
+  const data = await blobToBase64(file);
+  const result = await aiReadParts([
+    { inlineData: { mimeType: file.type || "image/jpeg", data } },
+    { text: "This photo shows (part of) the module framework. Read everything on it, including tables and footnotes." },
+  ], onStatus);
+  result.input = "photo";
+  return result;
+}
+
+// Sub-minimums written in the rules ("a sub-minimum of 40% in A2") go on that assessment
+function findSubMinimums(mod) {
+  for (const rule of mod.rules || []) {
+    const m = rule.match(/sub-?minimum\s+(?:of\s+)?(\d{1,3}(?:[.,]\d+)?)\s*%/i) || rule.match(/(\d{1,3})\s*%\s+sub-?minimum/i);
+    if (!m) continue;
+    const pct = parseFloat(m[1].replace(",", "."));
+    const r = norm(rule);
+    const named = mod.assessments.find(a => { const n = norm(a.name); return n.length >= 2 && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(r); });
+    const target = named || (/\b(exam|eksamen|a2|final test|theory exam)\b/i.test(rule) ? mod.assessments.find(a => a.isFinal) : null);
+    if (target && !target.subMin && pct > 0 && pct <= 100) target.subMin = pct;
+  }
+}
+
+function textLines(text) {
+  return text.split(/\r?\n/)
+    .map(l => l.split(PARA_END).join("").split("¦").map(s => s.trim()).filter(Boolean).join("   ").replace(/[ \t]+$/, ""))
+    .filter(l => l.trim())
+    .slice(0, 1500);
+}
+function photoLines(mod) {
+  return ["Photo read by the AI", ...mod.assessments.map(a => `${a.name}   ${fmt(Number(a.weight) || 0, 2)}%`), ...(mod.rules || [])];
+}
+
+// Which lines the reader used, and for what: "15%", "Group", "Formula", "Rule", "Module"
+function lineTags(lines, mod) {
+  const names = mod.assessments.map(a => ({ n: norm(a.name), a })).filter(x => x.n.length >= 2);
+  const groupNames = mod.groups.map(g => norm(g.name)).filter(Boolean);
+  const rules = (mod.rules || []).map(r => norm(r));
+  const { code } = splitName(mod.name);
+  let moduleTagged = false;
+  return lines.map(line => {
+    const n = norm(line);
+    if (!n) return "";
+    if (!moduleTagged && ((code && n.includes(norm(code))) || /framework|raamwerk/i.test(line))) { moduleTagged = true; return "Module"; }
+    if (/=/.test(line) && /\d\s*%/.test(line)) return "Formula";
+    const pct = line.match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+    if (pct) {
+      const hit = names.find(x => n.includes(x.n)) || names.find(x => sameName(x.a.name, line.replace(/\d.*$/, "")));
+      if (hit) return `${fmt(Number(hit.a.weight) || 0, 2)}%`;
+    }
+    if (groupNames.some(g => n === g || (n.startsWith(g) && n.length < g.length + 12))) return "Group";
+    if (n.length >= 14 && rules.some(r => r.includes(n) || (n.length > 30 && n.includes(r.slice(0, 30))))) return "Rule";
+    return "";
+  });
+}
+
+function renderReading(el) {
+  const job = ui.job;
+  if (!job) return go("add");
+  const count = job.total > 1 ? `File ${job.index} of ${job.total} · ` : "";
+  if (job.error || !job.lines) {
+    el.innerHTML = `
+      <div class="title-block pt12"><div class="eyebrow">${esc(count + job.src)}</div>
+        <h1 class="h-screen h32">${job.error ? "Couldn't read it" : "Reading framework…"}</h1></div>
+      <div class="blueprint read-wait">${CORNERS}
+        <div id="readStatus" class="${job.error ? "bad-text" : "pulse"}">${esc(job.error || job.status)}</div>
+      </div>
+      ${job.error ? `<button class="blueprint btn-solid" data-act="${ui.queue.length ? "next-file" : "go-add"}">${CORNERS}${ui.queue.length ? "Next file" : "Back"}</button>` : ""}`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="title-block pt12"><div class="eyebrow">${esc(count + job.src)}</div>
+      <h1 id="readTitle" class="h-screen h32">${job.done ? "Framework read" : "Reading framework…"}</h1></div>
+    <div class="blueprint read-lines" id="readLines">${CORNERS}
+      ${job.lines.map((t, i) => `<div class="ln${i < job.scan ? " seen" : ""}${i < job.scan && job.hits[i] ? " hit" : ""}"><span>${esc(t)}</span><b>${i < job.scan ? esc(job.hits[i]) : ""}</b></div>`).join("")}
+    </div>
+    <div class="row-between fs14 sticky-sum">
+      <span id="readCount"></span>
+      <span id="readTotal" class="cond15"></span>
+    </div>
+    <div id="readDone" ${job.done ? "" : "hidden"}><button class="blueprint btn-solid" data-act="go-review">${CORNERS}Check the weights</button></div>
+    ${job.done ? "" : `<button id="readSkip" class="link-acc center" data-act="read-all">Show all</button>`}`;
+  paintReadCount();
+}
+function paintReadingStatus() {
+  const s = $("readStatus");
+  if (s) s.textContent = ui.job.status;
+}
+function paintReadCount() {
+  const job = ui.job;
+  const mod = job.draft.mod;
+  const c = calculate(mod);
+  const found = job.hits.slice(0, job.scan).filter(t => /%$/.test(t)).length;
+  $("readCount").textContent = job.done
+    ? `${mod.assessments.length} assessment${mod.assessments.length === 1 ? "" : "s"}${mod.groups.length ? ` · ${mod.groups.length} group${mod.groups.length > 1 ? "s" : ""}` : ""} found`
+    : `${Math.min(found, mod.assessments.length)} found so far`;
+  $("readTotal").textContent = job.done ? `${fmt(c.totalWeight, 2)}% of final mark` : "";
+}
+// Lines appear one after another (faster for long frameworks: it never takes more than a few seconds)
+function startScan() {
+  const job = ui.job;
+  clearInterval(ui.scanTimer);
+  const rows = [...document.querySelectorAll("#readLines .ln")];
+  const step = reduceMotion() ? 1e9 : clamp(2600 / rows.length, 10, 150);
+  if (step >= 1e9) return finishScan();
+  ui.scanTimer = setInterval(() => {
+    if (ui.job !== job || ui.screen !== "reading") return clearInterval(ui.scanTimer);
+    const i = job.scan++;
+    const row = rows[i];
+    if (row) {
+      row.classList.add("seen");
+      if (job.hits[i]) { row.classList.add("hit"); row.querySelector("b").textContent = job.hits[i]; }
+    }
+    paintReadCount();
+    if (job.scan >= rows.length) finishScan();
+  }, step);
+}
+function finishScan() {
+  const job = ui.job;
+  clearInterval(ui.scanTimer);
+  job.scan = job.lines.length;
+  job.done = true;
+  if (ui.screen === "reading") renderReading($("scrReading"));
+}
+ACTIONS["read-all"] = finishScan;
+ACTIONS["next-file"] = () => nextJob();
+ACTIONS["go-review"] = () => { ui.draft = ui.job.draft; go("review"); };
+
+// ---- 6. Check the weights (new modules, and "Edit" on a module) ----
+
+function reviewCheck(mod) {
+  const c = calculate(mod);
+  const total = Math.round(c.totalWeight * 100) / 100;
+  const used = mod.groups.filter(g => mod.assessments.some(a => a.groupId === g.id));
+  const badGroup = used.find(g => Math.abs(c.groupStats[g.id].inner - 100) > 0.5);
+  const ok = mod.assessments.length > 0 && Math.abs(total - 100) < 0.5 && !badGroup;
+  return { c, total, badGroup, ok };
+}
+
+function renderReview(el) {
+  const d = ui.draft;
+  if (!d) return go("modules");
+  const mod = d.mod;
+  // A name that is only a code ("CHE 132") goes in the Code box
+  const onlyCode = /^[A-Za-z]{2,10}\s?\d{3}[A-Za-z]?$/.test(mod.name.trim());
+  const { code, title } = onlyCode ? { code: mod.name.trim().toUpperCase(), title: "" } : splitName(mod.name);
+  const isNew = d.mode === "new";
+  const step = isNew ? (ui.job && ui.job.total > 1 ? `File ${ui.job.index} of ${ui.job.total} · Step 2 of 2` : ui.job ? "Step 2 of 2" : "Add by hand") : "Edit module";
+
+  const rows = [];
+  const shown = new Set();
+  const groupBlock = g => {
+    shown.add(g.id);
+    rows.push(reviewGroupHtml(mod, g));
+    mod.assessments.filter(a => a.groupId === g.id).forEach(a => rows.push(reviewRowHtml(mod, a)));
+    rows.push(`<button class="link-acc indent sm" data-act="rv-add" data-gid="${g.id}">${ic("plus", 14)}Add to ${esc(g.name || "this group")}</button>`);
+  };
+  for (const a of mod.assessments) {
+    const g = groupOf(mod, a);
+    if (!g) rows.push(reviewRowHtml(mod, a));
+    else if (!shown.has(g.id)) groupBlock(g);
+  }
+  mod.groups.filter(g => !shown.has(g.id)).forEach(groupBlock);
+
+  el.innerHTML = `
+    <div class="top-row between">
+      <button class="back" data-act="rv-back">${ic("chevL")}${isNew ? "Back" : "Cancel"}</button>
+      <div class="eyebrow">${esc(step)}</div>
+    </div>
+    <h1 class="h-screen h32">Check the weights</h1>
+    <div class="code-name">
+      <input class="box-input strong" data-in="rv-code" value="${esc(code)}" placeholder="Code" aria-label="Module code">
+      <input class="box-input" data-in="rv-title" value="${esc(code || onlyCode ? title : mod.name)}" placeholder="Module name" aria-label="Module name">
+    </div>
+    <div class="rv-sum">
+      <div id="rvSegs" class="segs"></div>
+      <div class="row-between fs14"><span id="rvMsg"></span><b id="rvTotal" class="cond16"></b></div>
+    </div>
+    <div class="rv-table">
+      <div class="grid-rv th"><span>Assessment</span><span class="r">Weight</span><span class="c">Final</span><span></span></div>
+      ${rows.join("")}
+      <div class="row-gap20">
+        <button class="link-acc h48" data-act="rv-add">${ic("plus", 16)}Add assessment</button>
+        <button class="link-acc h48" data-act="rv-add-group">${ic("layers", 16)}Add group</button>
+      </div>
+    </div>
+    ${notesRulesHtml(mod)}
+    <div class="rv-footer">
+      <button id="rvSave" class="blueprint btn-solid" data-act="rv-save">${CORNERS}<span></span></button>
+      <button id="rvAnyway" class="link-acc center sm" data-act="rv-save-anyway" hidden>Save anyway (my framework adds up differently)</button>
+    </div>`;
+  paintReview();
+}
+
+function reviewGroupHtml(mod, g) {
+  return `
+    <div class="rv-group" data-gid="${g.id}">
+      <div class="grid-rvg">
+        <input class="ghost-input group-name" data-in="g-name" value="${esc(g.name)}" aria-label="Group name">
+        <label class="num-box acc"><input type="number" inputmode="decimal" step="any" data-in="g-weight" value="${esc(g.weight)}" aria-label="Group weight"><span>%</span></label>
+        <span class="meta12 lh12">of the final mark</span>
+        <button class="x" data-act="g-remove" aria-label="Remove group (keeps its assessments)">${ic("x", 16)}</button>
+      </div>
+      <div class="meta12 g-inner" id="inner-${g.id}"></div>
+    </div>`;
+}
+
+function reviewRowHtml(mod, a) {
+  const g = groupOf(mod, a);
+  const date = dateFor(mod, a);
+  const sub = Number(a.subMin) || 0;
+  return `
+    <div class="rv-row${g ? " in-group" : ""}" data-aid="${a.id}">
+      <div class="grid-rv">
+        <input class="ghost-input" data-in="a-name" value="${esc(a.name)}" placeholder="Name" aria-label="Assessment name">
+        <label class="num-box"><input type="number" inputmode="decimal" step="any" data-in="a-weight" value="${esc(a.weight)}" aria-label="Weight"><span>%</span></label>
+        <button class="dot${a.isFinal ? " on" : ""}" data-act="a-final" aria-label="Final test" aria-pressed="${!!a.isFinal}"><i></i></button>
+        <button class="x" data-act="a-remove" aria-label="Remove">${ic("x", 16)}</button>
+      </div>
+      <div class="chips">
+        ${date ? `<span class="chip plain">${dayMonth(date.date)}</span>` : ""}
+        <button class="chip${sub ? " on" : ""}" data-act="a-sub">${sub ? `Sub-minimum ${fmt(sub)}%` : "+ Sub-minimum"}</button>
+        ${mod.groups.length ? `<select class="chip chip-select" data-ch="a-group" aria-label="Group">
+          <option value="">Not in a group</option>${mod.groups.map(x => `<option value="${x.id}"${x.id === a.groupId ? " selected" : ""}>In ${esc(x.name || "group")}</option>`).join("")}
+        </select>` : ""}
+      </div>
+    </div>`;
+}
+
+function notesRulesHtml(mod) {
+  const notes = mod.notes || [], rules = mod.rules || [];
+  if (!notes.length && !rules.length) return "";
+  return `
+    <div class="rules">
+      <div class="eyebrow">Rules from your framework</div>
+      ${notes.map(n => `<div class="rule note">${esc(n)}</div>`).join("")}
+      ${rules.map(r => `<div class="rule">${esc(r)}</div>`).join("")}
+    </div>`;
+}
+
+// The numbers that change while typing (the inputs themselves are left alone)
+function paintReview() {
+  const mod = ui.draft.mod;
+  const { c, total, badGroup, ok } = reviewCheck(mod);
+  $("rvSegs").innerHTML = c.rows.map(r => `<i style="flex:${Math.max(0, r.weight)};background:${r.a.isFinal ? "var(--color-accent-700)" : r.a.groupId ? "var(--color-accent-300)" : "var(--color-accent-400)"}"></i>`).join("") +
+    (total < 100 ? `<i style="flex:${100 - total};background:var(--color-neutral-200)"></i>` : "");
+  const msg = $("rvMsg");
+  msg.textContent = !mod.assessments.length ? "No assessments yet. Add them below."
+    : badGroup ? `${badGroup.name || "A group"}: its parts should add up to 100%.`
+    : ok ? "Weights add up to 100%" : `Weights add up to ${fmt(total, 2)}%. They should add up to 100%.`;
+  msg.className = ok ? "acc7" : "bad-text";
+  $("rvTotal").textContent = fmt(total, 2) + "%";
+  $("rvTotal").className = "cond16 " + (ok ? "acc7" : "bad-text");
+  for (const g of mod.groups) {
+    const el = $("inner-" + g.id);
+    if (!el) continue;
+    const inner = c.groupStats[g.id].inner;
+    el.textContent = `Parts add up to ${fmt(inner, 2)}% of the group`;
+    el.classList.toggle("bad-text", Math.abs(inner - 100) > 0.5);
+  }
+  const save = $("rvSave");
+  save.classList.toggle("off", !ok);
+  save.querySelector("span").textContent = ok ? (ui.draft.mode === "new" ? "Save module" : "Save changes") : "Weights must add up to 100%";
+  $("rvAnyway").hidden = ok || !mod.assessments.length;
+}
+
+const draftA = t => ui.draft.mod.assessments.find(a => a.id === t.closest("[data-aid]").dataset.aid);
+const draftG = t => ui.draft.mod.groups.find(g => g.id === t.closest("[data-gid]").dataset.gid);
+const num = v => (v === "" ? 0 : parseFloat(String(v).replace(",", ".")) || 0);
+
+INPUTS["rv-code"] = t => { const m = ui.draft.mod; m.name = joinName(t.value, document.querySelector('[data-in="rv-title"]').value); };
+INPUTS["rv-title"] = t => { const m = ui.draft.mod; m.name = joinName(document.querySelector('[data-in="rv-code"]').value, t.value); };
+INPUTS["a-name"] = t => (draftA(t).name = t.value);
+INPUTS["a-weight"] = t => { draftA(t).weight = num(t.value); paintReview(); };
+INPUTS["g-name"] = t => (draftG(t).name = t.value);
+INPUTS["g-weight"] = t => { draftG(t).weight = num(t.value); paintReview(); };
+ACTIONS["a-final"] = t => { const a = draftA(t); ui.draft.mod.assessments.forEach(x => (x.isFinal = x === a)); renderReview($("scrReview")); };
+ACTIONS["a-remove"] = t => { const a = draftA(t); const m = ui.draft.mod; m.assessments = m.assessments.filter(x => x !== a); renderReview($("scrReview")); };
+// Sub-minimum: none → 40% → 50% → none
+ACTIONS["a-sub"] = t => { const a = draftA(t); const s = Number(a.subMin) || 0; a.subMin = s === 0 ? 40 : s === 40 ? 50 : null; renderReview($("scrReview")); };
+CHANGES["a-group"] = t => {
+  const a = draftA(t), m = ui.draft.mod;
+  a.groupId = t.value || null;
+  // keep it with its group's other rows
+  m.assessments = m.assessments.filter(x => x !== a);
+  const last = a.groupId ? m.assessments.map(x => x.groupId).lastIndexOf(a.groupId) : -1;
+  m.assessments.splice(last >= 0 ? last + 1 : m.assessments.length, 0, a);
+  renderReview($("scrReview"));
+};
+ACTIONS["g-remove"] = t => {
+  // Keep the assessments, now counting directly towards the final mark
+  const g = draftG(t), m = ui.draft.mod;
+  m.assessments.forEach(a => { if (a.groupId === g.id) { a.weight = Math.round(effectiveWeight(m, a) * 10000) / 10000; a.groupId = null; } });
+  m.groups = m.groups.filter(x => x !== g);
+  renderReview($("scrReview"));
+};
+ACTIONS["rv-add"] = t => {
+  const m = ui.draft.mod, gid = t.dataset.gid || null;
+  const a = { id: uid(), name: "", weight: 0, mark: "", isFinal: !m.assessments.length, groupId: gid };
+  const last = gid ? m.assessments.map(x => x.groupId).lastIndexOf(gid) : -1;
+  if (last >= 0) m.assessments.splice(last + 1, 0, a); else m.assessments.push(a);
+  renderReview($("scrReview"));
+  const input = document.querySelector(`[data-aid="${a.id}"] [data-in="a-name"]`);
+  if (input) input.focus();
+};
+ACTIONS["rv-add-group"] = () => {
+  const m = ui.draft.mod, id = uid();
+  m.groups.push({ id, name: "Class mark", weight: 40 });
+  m.assessments.push({ id: uid(), name: "Test 1", weight: 50, mark: "", isFinal: false, groupId: id },
+    { id: uid(), name: "Test 2", weight: 50, mark: "", isFinal: false, groupId: id });
+  renderReview($("scrReview"));
+  const input = document.querySelector(`[data-gid="${id}"] [data-in="g-name"]`);
+  if (input) input.select();
+};
+ACTIONS["rv-back"] = () => {
+  if (ui.draft.mode === "edit") { ui.draft = null; go("module"); return; }
+  ui.draft = null; ui.queue = []; ui.job = null;
+  go("add");
+};
+ACTIONS["rv-save"] = () => { if (reviewCheck(ui.draft.mod).ok) saveDraft(); };
+ACTIONS["rv-save-anyway"] = saveDraft;
+
+async function saveDraft() {
+  const d = ui.draft;
+  const m = d.mod;
+  m.name = m.name.trim() || "New module";
+  m.groups = m.groups.filter(g => m.assessments.some(a => a.groupId === g.id));
+  if (d.mode === "edit") {
+    const mod = state.modules.find(x => x.id === m.id);
+    if (mod) Object.assign(mod, { name: m.name, groups: m.groups, assessments: m.assessments });
+    ui.draft = null;
+    saveState();
+    go("module");
+    return;
+  }
+  state.modules.push(m);
+  state.onboarded = true;
+  saveState();
+  const pdf = ui.job && ui.job.draft === d ? ui.job.pdf : null;
+  if (pdf) saveFile(m.id, pdf).catch(err => console.warn("Could not keep the PDF", err)); // for "Read again with AI"
+  ui.draft = null;
+  if (ui.queue.length) { showToast(`Saved ${m.name}. Next file…`, 2500); nextJob(); return; }
+  ui.job = null;
+  openModule(m.id, "modules");
+}
+
+// ---- 7. The module page ----
+
+const GOALS = [[50, "Pass 50"], [60, "60"], [75, "Dist. 75"]];
+
+function renderModulePage(el) {
+  const mod = currentModule();
+  if (!mod) return go("modules");
+  const { code, title } = splitName(mod.name);
+  const folder = state.folders.find(f => f.id === mod.folderId);
+  const c = calculate(mod);
+  const weightNote = !mod.assessments.length
+    ? "No tests or assignments were found. Tap Edit to add them."
+    : Math.abs(c.totalWeight - 100) > 0.01 ? `The weights add up to ${fmt(c.totalWeight, 2)}%, not 100%. Results are scaled to 100% for now; tap Edit to fix them.` : "";
+  const source = mod.fileName
+    ? `Read from ${mod.fileName}${mod.readBy === "ai" ? ` · by the AI${mod.aiInput === "pdf" ? " from the PDF" : mod.aiInput === "photo" ? " from a photo" : ""}` : ""}`
+    : mod.pasted ? "From pasted text" : "Added by hand";
+  const custom = !GOALS.some(([g]) => g === Number(mod.target));
+
+  // Rows in framework order; a group's rows are shown together under its heading
+  const rows = [];
+  const shown = new Set();
+  for (const a of mod.assessments) {
+    const g = groupOf(mod, a);
+    if (!g) rows.push(moduleRowHtmlA(mod, a));
+    else if (!shown.has(g.id)) {
+      shown.add(g.id);
+      rows.push(moduleGroupHtml(mod, g));
+      mod.assessments.filter(x => x.groupId === g.id).forEach(x => rows.push(moduleRowHtmlA(mod, x)));
+    }
+  }
+
+  el.innerHTML = `
+    <div class="top-row between">
+      <button class="back" data-act="leave-module">${ic("chevL")}${ui.from === "dates" ? "Key dates" : "My modules"}</button>
+      <div class="row-gap6">
+        <label class="tag-select"><select data-ch="mod-folder" aria-label="Folder">${folderOptions(mod.folderId)}</select><span>${esc(folder ? folder.name : "No folder")}</span></label>
+        ${aiOn() && mod.sourceText ? `<button class="sq-icon" data-act="reread" aria-label="Read again with AI" title="Read again with AI">${ic("sparkles", 20)}</button>` : ""}
+        <button class="sq-icon" data-act="edit-module" aria-label="Edit weights" title="Edit name and weights">${ic("pencil", 19)}</button>
+        <button class="sq-icon" data-act="ask-delete" aria-label="Delete module" title="Delete module">${ic("trash", 20)}</button>
+      </div>
+    </div>
+    <div class="mod-title">
+      ${code ? `<div class="m-code big">${esc(code)}</div>` : ""}
+      <h1 class="h-screen h34">${esc(title)}</h1>
+      <div class="meta12">${esc(source)}</div>
+      ${weightNote ? `<div class="warn-line">${esc(weightNote)}</div>` : ""}
+    </div>
+
+    <div class="blueprint stats2">${CORNERS}
+      <div class="cell wide gap12">
+        <div class="row-between base"><span id="heroLabel" class="eyebrow"></span><span id="heroGoal" class="meta12"></span></div>
+        <div id="hero" class="hero80"></div>
+        <div class="bar10 layered">
+          <i id="barMax" class="max"></i><i id="barProj" class="proj"></i><i id="barNow" class="now"></i><b id="barGoal"></b>
+        </div>
+        <div id="heroSub" class="meta13"></div>
+      </div>
+      <div class="cell"><div class="eyebrow">Average on work done</div><div id="statAvg" class="num26"></div></div>
+      <div class="cell"><div class="eyebrow">Weight completed</div><div id="statDone" class="num26"></div></div>
+    </div>
+
+    <div class="goal-panel">
+      <div class="row-between">
+        <div class="eyebrow on-dark">Final mark I want</div>
+        <div class="goal-seg">
+          ${GOALS.map(([g, label]) => `<button class="${Number(mod.target) === g ? "on" : ""}" data-act="goal" data-goal="${g}">${label}</button>`).join("")}
+          <input class="${custom ? "on" : ""}" type="number" inputmode="decimal" min="0" max="100" placeholder="Other" aria-label="Other goal" data-ch="goal-other" value="${custom ? esc(mod.target) : ""}">
+        </div>
+      </div>
+      <div class="need-row"><div id="needBig" class="hero64"></div><div id="needText" class="fs14 lh135"></div></div>
+      <div id="subNote" class="sub-note" hidden></div>
+    </div>
+
+    <div class="assess">
+      <div class="row-between pb10">
+        <h2 class="h22">Assessments</h2>
+        <button class="switch-row" data-act="what-if" aria-pressed="${ui.whatIf}"><span>What-if</span><span class="switch${ui.whatIf ? " on" : ""}"><i></i></span></button>
+      </div>
+      <div class="grid-ma th"><span>Assessment</span><span class="r">Weight</span><span class="r">Mark</span><span class="r">Counts</span></div>
+      ${rows.join("")}
+      <div class="meta12 pt10">Tap a row to enter a mark as a percentage (68) or a score (34/50).</div>
+    </div>
+
+    <div class="dates-sec">
+      <div class="row-between"><h2 class="h22">Key dates</h2><button class="link-acc" data-act="add-date">${ic("plus", 16)}Add date</button></div>
+      <div id="datesEdit">${datesEditorHtml(mod)}</div>
+    </div>
+
+    ${notesRulesHtml(mod)}`;
+  paintModule();
+}
+
+function moduleGroupHtml(mod, g) {
+  const kids = mod.assessments.filter(x => x.groupId === g.id);
+  return `
+    <div class="grid-ma ma-group" data-gid="${g.id}">
+      <span class="g-names"><span class="g-name">${esc(g.name || "Group")}</span><span class="meta12">Group · ${kids.length} part${kids.length === 1 ? "" : "s"} · mark is the group average</span></span>
+      <span class="r cond15">${fmt(Number(g.weight) || 0, 1)}%</span>
+      <span class="r cond17" data-f="gmark"></span>
+      <span class="r cond15" data-f="gcounts"></span>
+    </div>`;
+}
+
+function moduleRowHtmlA(mod, a) {
+  const g = groupOf(mod, a);
+  return `
+    <div class="ma-row${g ? " in-group" : ""}" data-aid="${a.id}" data-act="open-sheet" role="button" tabindex="0">
+      <div class="grid-ma">
+        <span class="a-names">
+          <span class="a-top"><span class="a-name">${esc(a.name || "Unnamed")}</span>${a.isFinal ? `<span class="tag-final">Final test</span>` : ""}</span>
+          <span class="meta12" data-f="meta"></span>
+        </span>
+        <span class="r cond15 dim">${fmt(effectiveWeight(mod, a), 1)}%</span>
+        <span class="r cond17" data-f="mark"></span>
+        <span class="r cond15" data-f="counts"></span>
+      </div>
+      <div class="wi-row" data-f="wi" hidden>
+        <input type="range" min="0" max="100" step="1" data-in="wi" aria-label="What-if mark">
+        <b class="cond15 acc7"></b>
+      </div>
+    </div>`;
+}
+
+// The what-if mark for an assessment that isn't marked yet (starts at what's needed)
+const wiValue = (p, a) => ui.wi[a.id] ?? clamp(Math.ceil(p.need ?? 50), 0, 100);
+
+// Fills in every number on the module page (also while dragging a what-if slider)
+function paintModule() {
+  const mod = currentModule();
+  if (!mod || ui.screen !== "module") return;
+  const p = plan(mod);
+  const goal = p.goal;
+  const wiOn = ui.whatIf && p.pending.length > 0;
+  const proj = (p.earned + p.pending.reduce((s, r) => s + wiValue(p, r.a) * r.weight / 100, 0)) * p.scale;
+  const wiFailsSub = wiOn && p.pending.some(r => r.a.subMin && wiValue(p, r.a) < r.a.subMin);
+  const failedSub = p.rows.find(r => r.a.subMin && hasMark(r) && r.pct < r.a.subMin);
+
+  $("heroLabel").textContent = wiOn ? "Projected final mark" : "Final mark so far";
+  $("heroGoal").textContent = `goal ${fmt(goal)}%`;
+  const hero = $("hero");
+  hero.textContent = r1(wiOn ? proj : p.finalSoFar) + "%";
+  hero.className = "hero80" + (wiOn ? (wiFailsSub || proj < goal ? " bad-text" : " acc7") : "");
+  $("barNow").style.transform = `scaleX(${clamp(p.finalSoFar, 0, 100) / 100})`;
+  $("barProj").style.transform = `scaleX(${wiOn ? clamp(proj, 0, 100) / 100 : 0})`;
+  $("barMax").style.width = clamp(p.finalSoFar + p.remPct, 0, 100) + "%";
+  $("barGoal").style.left = clamp(goal, 0, 100) + "%";
+  $("heroSub").textContent = wiOn
+    ? (wiFailsSub ? "Fails a sub-minimum, so the module is not passed." : proj >= goal ? `Reaches your ${fmt(goal)}% goal.` : `${r1(goal - proj)} short of your ${fmt(goal)}% goal.`)
+    : !p.rows.length ? "Add the module's assessments to start." : p.pending.length ? `Out of 100%. ${r1(p.remPct)}% of the module is still to come.` : "Out of 100%. All marks are in.";
+  $("statAvg").textContent = p.average === null ? "–" : r1(p.average) + "%";
+  $("statDone").textContent = r1(p.donePct) + "%";
+
+  // What's needed to reach the goal
+  let big, text, tone = "";
+  const fin = p.finalRow;
+  if (!p.rows.length) { big = "–"; text = "Add the assessments first."; }
+  else if (p.need === null) { const met = p.finalSoFar >= goal; big = met ? "Met" : "Missed"; text = `Final mark ${r1(p.finalSoFar)}%.`; tone = met ? "good" : "bad"; }
+  else if (p.need <= 0) { big = "0%"; text = `${fmt(goal)}% is already banked.`; tone = "good"; }
+  else if (p.need > 100) { big = Math.ceil(p.need) + "%"; text = `Out of reach. Full marks on the rest gives ${r1(p.finalSoFar + p.remPct)}%.`; tone = "bad"; }
+  else if (p.onlyFinal) { big = Math.ceil(Math.max(p.need, Number(fin.a.subMin) || 0)) + "%"; text = `needed in ${fin.a.name || "the final test"} to finish on ${fmt(goal)}%`; }
+  else { big = Math.ceil(p.need) + "%"; text = `average needed on the ${r1(p.remPct)}% still to come`; }
+  $("needBig").textContent = big;
+  $("needBig").className = "hero64 " + tone;
+  $("needText").textContent = text;
+  const subPend = p.pending.filter(r => r.a.subMin);
+  const subNote = failedSub ? `${failedSub.a.name} is below its ${fmt(failedSub.a.subMin)}% sub-minimum.`
+    : subPend.length ? `${subPend.map(r => `${r.a.name} has a ${fmt(r.a.subMin)}% sub-minimum`).join("; ")}, so you need at least that there whatever your other marks.` : "";
+  $("subNote").hidden = !subNote;
+  $("subNote").textContent = subNote;
+
+  // Rows
+  for (const r of p.rows) {
+    const row = document.querySelector(`.ma-row[data-aid="${r.a.id}"]`);
+    if (!row) continue;
+    const a = r.a, pend = !hasMark(r), invalid = Number.isNaN(r.pct);
+    const failSub = a.subMin && !pend && r.pct < a.subMin;
+    const g = groupOf(mod, a);
+    const date = dateFor(mod, a);
+    const bits = [];
+    if (g) bits.push(`${fmt(Number(a.weight) || 0, 2)}% of ${g.name}`);
+    if (date) { const n = daysUntil(date.date); bits.push(pend && n >= 0 ? `${dayMonth(date.date)} · ${whenText(n).toLowerCase()}` : dayMonth(date.date)); }
+    if (a.subMin) bits.push(failSub ? `below ${fmt(a.subMin)}% sub-min` : `sub-min ${fmt(a.subMin)}%`);
+    const meta = row.querySelector('[data-f="meta"]');
+    meta.textContent = bits.join(" · ");
+    meta.classList.toggle("bad-text", !!failSub);
+    const showWi = wiOn && pend;
+    const wv = wiValue(p, a);
+    const mark = row.querySelector('[data-f="mark"]');
+    mark.textContent = invalid ? "Fix" : pend ? (showWi ? wv + "%" : "Add") : fmt(r.pct, 1) + "%";
+    mark.className = "r cond17 " + (invalid || failSub ? "bad-text" : pend ? "acc7" : "");
+    row.querySelector('[data-f="counts"]').textContent = pend ? (showWi ? r1(wv * r.weight / 100) : "–") : r1(r.pct * r.weight / 100);
+    const wiRow = row.querySelector('[data-f="wi"]');
+    wiRow.hidden = !showWi;
+    if (showWi) {
+      const slider = wiRow.querySelector("input");
+      if (document.activeElement !== slider) slider.value = wv;
+      wiRow.querySelector("b").textContent = wv + "%";
+    }
+  }
+  for (const g of mod.groups) {
+    const row = document.querySelector(`.ma-group[data-gid="${g.id}"]`);
+    if (!row) continue;
+    const kids = p.rows.filter(r => r.a.groupId === g.id && hasMark(r));
+    row.querySelector('[data-f="gmark"]').textContent = p.groupStats[g.id]?.average == null ? "–" : r1(p.groupStats[g.id].average) + "%";
+    row.querySelector('[data-f="gcounts"]').textContent = kids.length ? r1(kids.reduce((s, r) => s + r.pct * r.weight / 100, 0)) : "–";
+  }
+  const sw = document.querySelector(".switch");
+  if (sw) sw.classList.toggle("on", ui.whatIf);
+}
+
+ACTIONS["leave-module"] = leaveModule;
+ACTIONS.goal = t => { currentModule().target = Number(t.dataset.goal); ui.wi = {}; saveState(); renderModulePage($("scrModule")); };
+CHANGES["goal-other"] = t => {
+  const v = parseFloat(String(t.value).replace(",", "."));
+  if (!(v >= 0 && v <= 100)) return;
+  currentModule().target = v;
+  ui.wi = {};
+  saveState();
+  renderModulePage($("scrModule"));
+};
+ACTIONS["what-if"] = () => { ui.whatIf = !ui.whatIf; ui.wi = {}; paintModule(); document.querySelector(".switch-row").setAttribute("aria-pressed", String(ui.whatIf)); };
+INPUTS.wi = t => { ui.wi[t.closest("[data-aid]").dataset.aid] = Number(t.value); paintModule(); };
+document.addEventListener("click", e => { if (e.target.closest(".wi-row")) e.stopPropagation(); }, true);
+CHANGES["mod-folder"] = t => {
+  const mod = currentModule();
+  mod.folderId = t.value || null;
+  saveState();
+  renderModulePage($("scrModule"));
+};
+ACTIONS["edit-module"] = () => {
+  ui.draft = { mode: "edit", mod: JSON.parse(JSON.stringify(currentModule())) };
+  go("review");
+};
+ACTIONS.reread = rereadWithAi;
+document.addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList?.contains("ma-row")) { e.preventDefault(); e.target.click(); }
+});
+
+// The module's own list of dates, to fix or add dates
+function datesEditorHtml(mod) {
+  const sorted = [...(mod.dates || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (!sorted.length) return `<div class="meta13 pt6">No dates found in the framework. Add the dates of tests and due dates to see them on Key dates.</div>`;
+  return sorted.map(d => {
+    const n = d.date ? daysUntil(d.date) : null;
+    return `
+      <div class="de-row${n !== null && n < 0 ? " past" : ""}" data-did="${d.id}">
+        <input class="ghost-input" data-in="d-label" value="${esc(d.label)}" placeholder="e.g. Test 1" aria-label="What">
+        <input class="box-input date" type="date" data-ch="d-date" value="${esc(d.date || "")}" aria-label="Date">
+        <span class="meta12 de-count${n !== null && n >= 0 && n <= 7 ? " acc7" : ""}">${n === null ? "" : n < 0 ? "done" : whenText(n).toLowerCase()}</span>
+        <button class="x" data-act="d-remove" aria-label="Remove date">${ic("x", 16)}</button>
+      </div>`;
+  }).join("");
+}
+const modDate = t => {
+  const mod = currentModule();
+  mod.dates = mod.dates || [];
+  const id = t.closest("[data-did]").dataset.did;
+  return mod.dates.find(d => String(d.id) === id);
+};
+INPUTS["d-label"] = t => { modDate(t).label = t.value; saveState(); };
+CHANGES["d-date"] = t => { modDate(t).date = t.value; saveState(); $("datesEdit").innerHTML = datesEditorHtml(currentModule()); paintModule(); };
+ACTIONS["d-remove"] = t => {
+  const mod = currentModule(), d = modDate(t);
+  mod.dates = mod.dates.filter(x => x !== d);
+  saveState();
+  $("datesEdit").innerHTML = datesEditorHtml(mod);
+  paintModule();
+};
+ACTIONS["add-date"] = () => {
+  const mod = currentModule();
+  mod.dates = mod.dates || [];
+  const d = { id: uid(), label: "", date: todayIso() };
+  mod.dates.push(d);
+  saveState();
+  $("datesEdit").innerHTML = datesEditorHtml(mod);
+  const input = document.querySelector(`[data-did="${d.id}"] [data-in="d-label"]`);
+  if (input) input.focus();
+};
+// Older dates have no id yet
+state.modules.forEach(m => (m.dates || []).forEach(d => { if (!d.id) d.id = uid(); }));
+
+// "Read again with AI": replaces the assessments, keeping marks of assessments with the same name
+async function rereadWithAi() {
+  const mod = currentModule();
+  if (!mod || !mod.sourceText) return;
+  if (!confirm(`Let the AI read "${mod.name}" again? Its assessments and key dates will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
+  const btn = document.querySelector('[data-act="reread"]');
+  if (btn) btn.disabled = true;
+  showToast("The AI is reading the framework again…", 60000);
+  try {
+    const pdf = /\.pdf$/i.test(mod.fileName || "") ? await loadFile(mod.id) : null;
+    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, msg => showToast(msg, 60000), pdf), mod.sourceText);
+    const old = mod.assessments.filter(a => String(a.mark).trim() || a.subMin);
+    parsed.assessments.forEach(a => {
+      const o = old.find(x => norm(x.name) === norm(a.name)) || old.find(x => sameName(x.name, a.name));
+      if (o) { a.mark = o.mark; if (o.subMin) a.subMin = o.subMin; }
+    });
+    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy,
+      dates: parsed.dates && parsed.dates.length ? parsed.dates : mod.dates || [],
+      aiInput: readBy === "ai" ? parsed.input : undefined });
+    findSubMinimums(mod);
+    saveState();
+    showToast("Read again. Check the weights.", 4000);
+    if (ui.screen === "module") renderModulePage($("scrModule"));
+  } catch (err) {
+    showToast("The AI couldn't read this framework: " + err.message, 8000);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---- 8. The mark sheet (slides up from the bottom; drag it down to close) ----
+
+const sheet = { el: null, back: null, closing: false, drag: null };
+const translateY = el => { const t = getComputedStyle(el).transform; return !t || t === "none" ? 0 : new DOMMatrixReadOnly(t).m42; };
+
+ACTIONS["open-sheet"] = t => {
+  const mod = currentModule();
+  const a = mod && mod.assessments.find(x => x.id === t.dataset.aid);
+  if (!a) return;
+  ui.editing = a.id;
+  const layer = $("sheetLayer");
+  const g = groupOf(mod, a);
+  const ew = effectiveWeight(mod, a);
+  layer.innerHTML = `
+    <div class="backdrop" data-act="sheet-close"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(a.name)}">
+      <div class="handle"></div>
+      <div class="row-between start">
+        <div class="col2"><div class="h24">${esc(a.name || "Unnamed")}</div>
+          <div class="meta13">${fmt(ew, 2)}% of the final mark${g ? ` (${fmt(Number(a.weight) || 0, 2)}% of ${esc(g.name)})` : ""}${a.subMin ? ` · sub-minimum ${fmt(a.subMin)}%` : ""}</div></div>
+        <button class="link-acc pad6" data-act="sheet-clear">Clear</button>
+      </div>
+      <div class="sheet-entry">
+        <input id="sheetInput" class="big-input" inputmode="decimal" placeholder="68 or 34/50" autocomplete="off" value="${esc(a.mark || "")}" data-in="sheet-raw" aria-label="Your mark">
+        <div id="sheetHint" class="fs14 hint"></div>
+      </div>
+      <input id="sheetSlider" type="range" min="0" max="100" step="1" data-in="sheet-slide" aria-label="Mark">
+      <div class="two-cells">
+        <div><div class="eyebrow sm">Counts for</div><div id="sheetCounts" class="cond20"></div></div>
+        <div><div class="eyebrow sm">Final mark so far</div><div id="sheetFinal" class="cond20"></div></div>
+      </div>
+      <button class="blueprint btn-solid" data-act="sheet-save">${CORNERS}Save mark</button>
+    </div>`;
+  layer.hidden = false;
+  sheet.el = layer.querySelector(".sheet");
+  sheet.back = layer.querySelector(".backdrop");
+  sheet.closing = false;
+  const r = reduceMotion();
+  sheet.el.animate(r ? [{ opacity: 0 }, { opacity: 1 }] : [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }], { duration: r ? 160 : 440, easing: DRAWER });
+  sheet.back.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "ease-out" });
+  sheet.el.addEventListener("pointerdown", sheetDown);
+  sheet.el.addEventListener("pointermove", sheetMove);
+  sheet.el.addEventListener("pointerup", sheetUp);
+  sheet.el.addEventListener("pointercancel", sheetUp);
+  paintSheet();
+  if (matchMedia("(pointer: fine)").matches) $("sheetInput").focus();
+};
+
+function paintSheet() {
+  const mod = currentModule();
+  const a = mod.assessments.find(x => x.id === ui.editing);
+  const raw = $("sheetInput").value;
+  const v = parseMark(raw);
+  const ok = v !== null && !Number.isNaN(v);
+  const ew = effectiveWeight(mod, a);
+  const hint = $("sheetHint");
+  hint.textContent = v === null ? "Percentage or score"
+    : !ok ? "Type a number like 68 or 34/50"
+    : a.subMin && v < a.subMin ? `Below the ${fmt(a.subMin)}% sub-minimum`
+    : raw.includes("/") ? `= ${r1(v)}%` : " ";
+  hint.classList.toggle("bad-text", !ok && v !== null || (ok && a.subMin && v < a.subMin));
+  const slider = $("sheetSlider");
+  if (document.activeElement !== slider) slider.value = ok ? Math.round(v) : 0;
+  $("sheetCounts").textContent = ok ? `${r1(v * ew / 100)} of ${fmt(ew, 1)}` : "–";
+  const after = calculate({ ...mod, assessments: mod.assessments.map(x => (x.id === a.id ? { ...x, mark: ok ? raw : "" } : x)) });
+  $("sheetFinal").textContent = r1(after.finalSoFar) + "%";
+}
+INPUTS["sheet-raw"] = () => paintSheet();
+INPUTS["sheet-slide"] = t => { $("sheetInput").value = t.value; paintSheet(); };
+
+ACTIONS["sheet-save"] = () => {
+  const mod = currentModule();
+  const a = mod.assessments.find(x => x.id === ui.editing);
+  const raw = $("sheetInput").value.trim();
+  const v = parseMark(raw);
+  if (v !== null && Number.isNaN(v)) { $("sheetInput").focus(); return; }
+  a.mark = raw;
+  ui.wi = {};
+  saveState();
+  buzz();
+  closeSheet();
+  paintModule();
+};
+ACTIONS["sheet-clear"] = () => {
+  const mod = currentModule();
+  mod.assessments.find(x => x.id === ui.editing).mark = "";
+  saveState();
+  closeSheet();
+  paintModule();
+};
+ACTIONS["sheet-close"] = () => closeSheet();
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("sheetLayer").hidden) closeSheet();
+  if (e.key === "Enter" && e.target.id === "sheetInput") ACTIONS["sheet-save"]();
+});
+
+function closeSheet() {
+  const el = sheet.el;
+  if (!el) return closeSheetNow();
+  if (sheet.closing) return;
+  sheet.closing = true;
+  const y = translateY(el), h = el.offsetHeight, r = reduceMotion();
+  el.getAnimations().forEach(a => a.cancel());
+  el.style.transform = `translateY(${y}px)`;
+  const anim = el.animate(r ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: `translateY(${y}px)` }, { transform: `translateY(${h}px)` }], { duration: 260, easing: DRAWER, fill: "forwards" });
+  if (sheet.back) {
+    const op = parseFloat(getComputedStyle(sheet.back).opacity);
+    sheet.back.getAnimations().forEach(a => a.cancel());
+    sheet.back.animate([{ opacity: op }, { opacity: 0 }], { duration: 260, easing: "ease-out", fill: "forwards" });
+  }
+  anim.onfinish = closeSheetNow;
+}
+function closeSheetNow() {
+  const layer = $("sheetLayer");
+  layer.hidden = true;
+  layer.innerHTML = "";
+  Object.assign(sheet, { el: null, back: null, closing: false, drag: null });
+  ui.editing = null;
+}
+
+// Drag by the handle or body (not the inputs). Upwards it rubber-bands; a quick flick
+// or dragging it past 45% of its height closes it, otherwise it snaps back.
+const rubber = (o, dim, c = 0.55) => (o * dim * c) / (dim + c * o);
+function sheetDown(e) {
+  if (sheet.closing || sheet.drag || e.target.closest("input, textarea, button")) return;
+  sheet.drag = { id: e.pointerId, y0: e.clientY, start: 0, hist: [], live: false };
+}
+function sheetMove(e) {
+  const d = sheet.drag, el = sheet.el;
+  if (!d || !el || e.pointerId !== d.id) return;
+  if (!d.live) {
+    if (Math.abs(e.clientY - d.y0) < 8) return;
+    const y0 = translateY(el);
+    el.getAnimations().forEach(a => a.cancel());
+    d.start = e.clientY - y0;
+    d.live = true;
+    el.setPointerCapture(e.pointerId);
+  }
+  let y = e.clientY - d.start;
+  if (y < 0) y = -rubber(-y, el.offsetHeight);
+  el.style.transform = `translateY(${y}px)`;
+  if (sheet.back) sheet.back.style.opacity = String(Math.max(0, 1 - Math.max(0, y) / el.offsetHeight));
+  d.hist.push({ y, t: e.timeStamp });
+  if (d.hist.length > 5) d.hist.shift();
+}
+function sheetUp(e) {
+  const d = sheet.drag;
+  if (!d || e.pointerId !== d.id) return;
+  sheet.drag = null;
+  if (!d.live) return;
+  const el = sheet.el, h = el.offsetHeight, y = translateY(el);
+  const a = d.hist[0], b = d.hist[d.hist.length - 1];
+  const v = a && b && b.t > a.t ? (b.y - a.y) / (b.t - a.t) : 0;
+  const projected = y + (v * 0.998) / (1 - 0.998);
+  if (v > 0.5 || (v >= 0 && projected > h * 0.45)) return closeSheet();
+  el.style.transform = "";
+  el.animate([{ transform: `translateY(${y}px)` }, { transform: "translateY(0)" }], { duration: 340, easing: EASE_OUT });
+  if (sheet.back) {
+    const op = parseFloat(sheet.back.style.opacity || "1");
+    sheet.back.style.opacity = "";
+    sheet.back.animate([{ opacity: op }, { opacity: 1 }], { duration: 220, easing: "ease-out" });
+  }
+}
+
+// ---- 9. Delete a module ----
+
+ACTIONS["ask-delete"] = () => {
+  const mod = currentModule();
+  const { code, title } = splitName(mod.name);
+  const layer = $("dlgLayer");
+  layer.innerHTML = `
+    <div class="dlg-back" data-act="dlg-cancel">
+      <div class="blueprint dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">${CORNERS}
+        <div id="dlgTitle" class="h24">Delete ${esc(code || title)}?</div>
+        <div class="fs14 lh15 dim8">${esc(title)} and all its marks and key dates will be removed from this ${matchMedia("(pointer: coarse)").matches ? "phone" : "device"}. Make a Backup first (⋯ menu) if you might need them.</div>
+        <div class="two-btns">
+          <button class="btn-line h48" data-act="dlg-cancel">Cancel</button>
+          <button class="btn-bad h48" data-act="dlg-delete">Delete module</button>
+        </div>
+      </div>
+    </div>`;
+  layer.hidden = false;
+  const dlg = layer.querySelector(".dlg");
+  dlg.addEventListener("click", e => { if (!e.target.closest("[data-act]")) e.stopPropagation(); });
+  dlg.animate([{ opacity: 0, transform: reduceMotion() ? "none" : "scale(0.96)" }, { opacity: 1, transform: "none" }], { duration: 200, easing: EASE_OUT });
+  layer.querySelector(".dlg-back").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" });
+};
+function closeDialog(after) {
+  const layer = $("dlgLayer");
+  const dlg = layer.querySelector(".dlg"), back = layer.querySelector(".dlg-back");
+  const done = () => { layer.hidden = true; layer.innerHTML = ""; if (after) after(); };
+  if (!dlg) return done();
+  const o = { duration: 150, easing: "ease-out", fill: "forwards" };
+  dlg.animate([{ transform: "none" }, { transform: reduceMotion() ? "none" : "scale(0.98)" }], o);
+  back.animate([{ opacity: 1 }, { opacity: 0 }], o).onfinish = done;
+}
+ACTIONS["dlg-cancel"] = () => closeDialog();
+ACTIONS["dlg-delete"] = () => {
+  const mod = currentModule();
+  buzz();
+  closeDialog(() => {
+    state.modules = state.modules.filter(m => m.id !== mod.id);
+    deleteFile(mod.id);
+    leaveModule();
+  });
+};
+
+// ---- The ⋯ menu: AI reader, install, backup, restore, appearance ----
+
+const menu = $("menu");
+// Under the ⋯ button (also after the screen changes size, e.g. a phone's address bar hiding)
+const placeMenu = () => {
+  const b = $("menuBtn");
+  if (!b) return closeMenu();
+  const r = b.getBoundingClientRect();
+  menu.style.top = r.bottom + 8 + "px";
+  menu.style.right = Math.max(12, window.innerWidth - r.right) + "px";
+};
+ACTIONS.menu = t => {
+  if (!menu.hidden) return closeMenu();
+  placeMenu();
+  menu.hidden = false;
+  t.setAttribute("aria-expanded", "true");
+  renderAiState();
+};
+function closeMenu() {
+  if (menu.hidden) return;
+  menu.hidden = true;
+  const b = $("menuBtn");
+  if (b) b.setAttribute("aria-expanded", "false");
+}
+document.addEventListener("click", e => { if (!menu.hidden && !e.target.closest("#menu, #menuBtn")) closeMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
+window.addEventListener("resize", () => { if (!menu.hidden) placeMenu(); });
+window.addEventListener("scroll", closeMenu, { passive: true });
+menu.querySelectorAll(".menu-item").forEach(item => item.addEventListener("click", () => closeMenu()));
+
+// Shows whether the AI reader is on, in the menu
 function renderAiState() {
   const on = aiOn();
   $("aiState").textContent = on ? "On" : "Off";
   $("aiState").classList.toggle("on", on);
-  const mod = currentModule();
-  $("rereadBtn").hidden = !(on && mod && mod.sourceText);
 }
 
-// A short message at the bottom of the screen, e.g. after uploading
+// A short message at the bottom of the screen
 function showToast(text, ms = 6000) {
   let toast = $("toast");
   if (!toast) {
@@ -1804,134 +2850,16 @@ function showToast(text, ms = 6000) {
   showToast.timer = setTimeout(() => toast.classList.remove("show"), ms);
 }
 
-// ---------- Actions ----------
+// ---------- AI reader settings ----------
 
-async function handleFiles(files) {
-  const status = $("uploadStatus");
-  let added = 0;
-  const aiProblems = [];
-  for (const file of files) {
-    status.textContent = `Reading ${file.name}…`;
-    try {
-      const text = await extractText(file);
-      const pdf = /\.pdf$/i.test(file.name) ? file : null;
-      let parsed = null, readBy = "built-in";
-      if (aiOn()) {
-        status.textContent = `The AI is reading ${file.name}… (this can take up to a minute)`;
-        try {
-          ({ parsed, readBy } = chooseReading(await aiRead(text, msg => (status.textContent = `${file.name}: ${msg}`), pdf), text));
-        } catch (err) {
-          console.warn(err);
-          aiProblems.push(`${file.name} (${err.message.replace(/\.$/, "")})`);
-        }
-      }
-      if (!parsed) parsed = parseFramework(text);
-      const mod = {
-        id: uid(),
-        name: parsed.name || guessModuleName(text, file.name),
-        fileName: file.name,
-        readBy,
-        aiInput: readBy === "ai" ? parsed.input : undefined,
-        target: 50,
-        folderId: state.uploadFolderId || null,
-        groups: parsed.groups,
-        assessments: parsed.assessments,
-        notes: parsed.notes,
-        rules: parsed.rules,
-        dates: parsed.dates || [],
-        sourceText: text.slice(0, SOURCE_TEXT_LIMIT), // kept so the AI can read it again later
-      };
-      state.modules.push(mod);
-      state.selectedId = mod.id;
-      if (pdf) await saveFile(mod.id, pdf); // for "Read again with AI"
-      added++;
-    } catch (err) {
-      console.error(err);
-      status.textContent = `Could not read ${file.name}: ${err.message}`;
-      saveState();
-      render();
-      return;
-    }
-  }
-  const message = (added ? `Added ${added} module${added > 1 ? "s" : ""}. Check the weights.` : "") +
-    (aiProblems.length ? ` The AI couldn't read ${aiProblems.join("; ")}. The built-in reader was used instead.` : "");
-  status.textContent = "";
-  saveState();
-  if (added) openModule(state.selectedId);
-  else render();
-  if (message) showToast(message, aiProblems.length ? 12000 : 5000);
-}
-
-// "Read again with AI": replaces the assessments, keeping marks of assessments with the same name
-async function rereadWithAi() {
-  const mod = currentModule();
-  if (!mod || !mod.sourceText) return;
-  if (!confirm(`Let the AI read "${mod.name}" again? Its assessments and key dates will be replaced. Marks you entered are kept for assessments with the same name.`)) return;
-  const btn = $("rereadBtn");
-  const label = text => (btn.innerHTML = `<i class="ti ti-sparkles"></i> ${escapeHtml(text)}`);
-  btn.disabled = true;
-  label("Reading…");
-  try {
-    const pdf = /\.pdf$/i.test(mod.fileName || "") ? await loadFile(mod.id) : null;
-    const { parsed, readBy } = chooseReading(await aiRead(mod.sourceText, label, pdf), mod.sourceText);
-    const oldMarks = mod.assessments.filter(a => String(a.mark).trim());
-    parsed.assessments.forEach(a => {
-      const old = oldMarks.find(o => norm(o.name) === norm(a.name)) || oldMarks.find(o => sameName(o.name, a.name));
-      if (old) a.mark = old.mark;
-    });
-    Object.assign(mod, { groups: parsed.groups, assessments: parsed.assessments, notes: parsed.notes, rules: parsed.rules, readBy,
-      dates: parsed.dates && parsed.dates.length ? parsed.dates : mod.dates || [],
-      aiInput: readBy === "ai" ? parsed.input : undefined });
-    saveState();
-    render();
-  } catch (err) {
-    alert("The AI couldn't read this framework: " + err.message);
-  } finally {
-    btn.disabled = false;
-    label("Read again with AI");
-  }
-}
-
-$("fileInput").addEventListener("change", e => {
-  handleFiles([...e.target.files]);
-  e.target.value = "";
-});
-
-const dz = $("dropZone");
-["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("dragover"); }));
-["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("dragover"); }));
-dz.addEventListener("drop", e => handleFiles([...e.dataTransfer.files]));
-
-$("addManualBtn").addEventListener("click", () => {
-  const mod = {
-    id: uid(),
-    name: "New module",
-    fileName: "",
-    target: 50,
-    folderId: state.uploadFolderId || null,
-    groups: [],
-    assessments: [
-      { id: uid(), name: "Test 1", weight: 25, mark: "", isFinal: false, groupId: null },
-      { id: uid(), name: "Assignment 1", weight: 25, mark: "", isFinal: false, groupId: null },
-      { id: uid(), name: "A2 (final test)", weight: 50, mark: "", isFinal: true, groupId: null },
-    ],
-  };
-  state.modules.push(mod);
-  openModule(mod.id);
-  $("moduleName").select();
-});
-
-$("addRowBtn").addEventListener("click", () => addAssessment(currentModule(), null));
-
-// AI reader settings
 const aiDialog = $("aiDialog");
-const aiStatus = (text, kind = "") => { $("aiStatus").textContent = text; $("aiStatus").className = `ai-status small ${kind}`; };
+const aiStatus = (text, kind = "") => { $("aiStatus").textContent = text; $("aiStatus").className = `ai-status ${kind}`; };
 
 $("aiBtn").addEventListener("click", () => {
   const s = loadAi();
   $("aiKey").value = s.key || "";
   $("aiModel").value = s.model || "";
-  aiStatus(s.key ? "The AI reader is on. New uploads are read by the AI." : "");
+  aiStatus(s.key ? "The AI reader is on. New frameworks are read by the AI." : "");
   aiDialog.showModal();
 });
 $("aiClose").addEventListener("click", () => aiDialog.close());
@@ -1940,14 +2868,16 @@ $("aiSave").addEventListener("click", () => {
   if (!key) { aiStatus("Paste your API key first.", "bad"); return; }
   saveAi({ key, model: $("aiModel").value.trim() });
   renderAiState();
-  aiStatus("Saved. The AI reader is on: new uploads are read by the AI.", "good");
+  aiStatus("Saved. The AI reader is on: new frameworks are read by the AI.", "good");
+  if (ui.screen === "add" || ui.screen === "module") render();
 });
 $("aiRemove").addEventListener("click", () => {
   try { localStorage.removeItem(AI_STORAGE_KEY); } catch (e) { /* ignore */ }
   $("aiKey").value = "";
   $("aiModel").value = "";
   renderAiState();
-  aiStatus("The AI reader is off and the key is removed from this browser.");
+  aiStatus("The AI reader is off and the key is removed from this device.");
+  if (ui.screen === "add" || ui.screen === "module") render();
 });
 $("aiTest").addEventListener("click", async () => {
   const key = $("aiKey").value.trim();
@@ -1957,7 +2887,7 @@ $("aiTest").addEventListener("click", async () => {
   aiStatus("Testing…");
   try {
     const { model } = await callGemini({ contents: [{ role: "user", parts: [{ text: "Reply with the word OK." }] }] }, msg => aiStatus(msg));
-    aiStatus(`It works! (model: ${model}). Click Save to keep it.`, "good");
+    aiStatus(`It works! (model: ${model}). Tap Save to keep it.`, "good");
   } catch (err) {
     aiStatus(err.message, "bad");
   } finally {
@@ -1966,121 +2896,30 @@ $("aiTest").addEventListener("click", async () => {
   }
 });
 
-$("rereadBtn").addEventListener("click", rereadWithAi);
+// ---------- Light, dark, or follow the phone/computer (kept per device) ----------
 
-// Key dates
-$("addDateBtn").addEventListener("click", () => {
-  const mod = currentModule();
-  mod.dates = mod.dates || [];
-  const d = { id: uid(), label: "", date: todayIso() };
-  mod.dates.push(d);
-  saveState();
-  renderDatesEditor(mod);
-  renderModuleList();
-  const inputs = [...document.querySelectorAll("#datesEdit .de-label")].filter(i => !i.value);
-  if (inputs.length) inputs[0].focus();
-});
-
-// Folders
-$("addFolderBtn").addEventListener("click", () => {
-  const f = { id: uid(), name: `Semester ${state.folders.length + 1}`, collapsed: false };
-  state.folders.push(f);
-  saveState();
-  render();
-  const li = document.querySelector(`.folder[data-fid="${f.id}"]`);
-  if (li) startRenameFolder(li, f);
-});
-
-$("uploadFolder").addEventListener("change", e => {
-  state.uploadFolderId = e.target.value || null;
-  saveState();
-});
-
-$("moduleFolder").addEventListener("change", e => moveModule(currentModule().id, e.target.value || null));
-
-$("addGroupBtn").addEventListener("click", () => {
-  const mod = currentModule();
-  const g = { id: uid(), name: "Class mark", weight: 0 };
-  mod.groups.push(g);
-  saveState();
-  render();
-  const input = document.querySelector(`tr[data-gid="${g.id}"] .in-gname`);
-  if (input) input.select();
-});
-
-$("moduleName").addEventListener("input", e => {
-  currentModule().name = e.target.value;
-  saveState();
-  updateResults();
-});
-
-$("deleteModuleBtn").addEventListener("click", () => {
-  const mod = currentModule();
-  if (!confirm(`Delete "${mod.name}" and all its marks?`)) return;
-  state.modules = state.modules.filter(m => m.id !== mod.id);
-  deleteFile(mod.id);
-  openModule(null);
-});
-
-// Back to the list (all folders closed again)
-$("backBtn").addEventListener("click", () => openModule(null));
-
-// "+": show or hide the upload box
-$("addBtn").addEventListener("click", () => {
-  const panel = $("addPanel");
-  const show = panel.hidden;
-  if (show && currentModule() && onPhone()) openModule(null); // on a phone, the upload box is on the list
-  panel.hidden = !show;
-  if (show) { window.scrollTo({ top: 0, behavior: "smooth" }); $("addBtn").blur(); }
-});
-$("closeAddBtn").addEventListener("click", () => { if (state.modules.length) $("addPanel").hidden = true; });
-
-// The ⋯ menu
-const menu = $("menu");
-const setMenu = open => {
-  menu.hidden = !open;
-  $("menuBtn").setAttribute("aria-expanded", String(open));
-};
-$("menuBtn").addEventListener("click", e => { e.stopPropagation(); setMenu(menu.hidden); });
-document.addEventListener("click", e => { if (!menu.hidden && !e.target.closest(".menu-wrap")) setMenu(false); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
-menu.querySelectorAll(".menu-item").forEach(item => item.addEventListener("click", () => setMenu(false)));
-
-// Light, dark, or follow the phone/computer (kept per device)
 const THEME_KEY = "markCalc.theme";
 function applyTheme(choice) {
   if (choice === "light" || choice === "dark") document.documentElement.dataset.theme = choice;
   else delete document.documentElement.dataset.theme;
   document.querySelectorAll("[data-theme-choice]").forEach(b => {
     const active = b.dataset.themeChoice === (choice || "auto");
-    b.classList.toggle("active", active);
+    b.classList.toggle("on", active);
     b.setAttribute("aria-checked", String(active));
   });
   const dark = choice === "dark" || (choice !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelector('meta[name="theme-color"]').content = dark ? "#1a1f29" : "#3b5bdb";
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#141517" : "#f2f2f3";
 }
 let themeChoice = "auto";
 try { themeChoice = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* ignore */ }
 applyTheme(themeChoice);
-document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", () => {
+document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", e => {
+  e.stopPropagation(); // keep the menu open while choosing
   themeChoice = b.dataset.themeChoice;
-  try { localStorage.setItem(THEME_KEY, themeChoice); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(THEME_KEY, themeChoice); } catch (err) { /* ignore */ }
   applyTheme(themeChoice);
 }));
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(themeChoice));
-
-$("targetInput").addEventListener("input", e => {
-  currentModule().target = parseFloat(e.target.value) || 0;
-  saveState();
-  updateResults();
-});
-
-document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", () => {
-  currentModule().target = Number(ch.dataset.target);
-  $("targetInput").value = ch.dataset.target;
-  saveState();
-  updateResults();
-}));
 
 // ---------- Phone app (installable web app) ----------
 // Android and desktop Chrome/Edge offer an install prompt; Safari on iPhone needs "Add to Home Screen".
@@ -2116,7 +2955,8 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(err => console.warn("Offline support not available", err));
 }
 
-// Backup / restore (marks are stored per browser, so this moves them between devices)
+// ---------- Backup / restore (marks are stored per browser, so this moves them between devices) ----------
+
 $("exportBtn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
@@ -2135,12 +2975,22 @@ $("importInput").addEventListener("change", async e => {
     if (!data || !Array.isArray(data.modules)) throw new Error("Not a Mark Calculator backup.");
     if (!confirm("Replace your current modules with this backup?")) return;
     state = upgradeState(data);
-    openModule(null);
+    state.modules.forEach(m => (m.dates || []).forEach(d => { if (!d.id) d.id = uid(); }));
+    state.onboarded = true;
+    state.selectedId = null;
+    saveState();
+    go("modules");
     showToast(`Restored ${state.modules.length} module${state.modules.length === 1 ? "" : "s"}.`);
   } catch (err) {
     alert("Could not restore: " + err.message);
   }
 });
 
-// Start on the clean list: no module open, every folder closed
-openModule(null);
+// ---------- Start ----------
+// The intro the first time; after that, the clean list with every folder closed
+
+state.selectedId = null;
+state.folders.forEach(f => (f.collapsed = true));
+if (state.modules.length) state.onboarded = true;
+ui.screen = state.onboarded ? "modules" : "onboarding";
+render();
