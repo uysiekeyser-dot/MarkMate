@@ -45,6 +45,10 @@
   --panel-rule: #2c455d;
   --panel-bad: oklch(0.75 0.13 25);
 
+  /* Progress chart lines (checked for colour-blind separation on these backgrounds) */
+  --series-final: #36689e;
+  --series-avg: #b0712a;
+
   --font-heading: "Barlow Condensed", system-ui, sans-serif;
   --font-body: "Barlow", system-ui, sans-serif;
   --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
@@ -87,6 +91,8 @@
     --panel-muted: #9cc3ea;
     --panel-soft: #bcdcfd;
     --panel-rule: #2b4862;
+    --series-final: #5f97d3;
+    --series-avg: #bd7e36;
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
     color-scheme: dark;
   }
@@ -123,6 +129,8 @@
   --panel-muted: #9cc3ea;
   --panel-soft: #bcdcfd;
   --panel-rule: #2b4862;
+  --series-final: #5f97d3;
+  --series-avg: #bd7e36;
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
@@ -291,7 +299,7 @@ input[type="range"] { accent-color: var(--color-accent); width: 100%; height: 28
 .sq-btn.line { border: 1px solid var(--color-divider); }
 .sq-btn.line[aria-expanded="true"] { background: var(--color-accent-100); }
 .sq-icon {
-  width: 40px; height: 44px; display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 44px; display: flex; align-items: center; justify-content: center;
   color: color-mix(in srgb, var(--color-text) 70%, transparent);
   transition: transform 160ms var(--ease-out), background-color 150ms ease;
 }
@@ -331,6 +339,8 @@ input[type="range"] { accent-color: var(--color-accent); width: 100%; height: 28
 .num-box span { font: 600 14px var(--font-heading); color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-left: 1px; }
 .plain-select { border: 0; background: transparent; font-weight: 500; font-size: 15px; text-align: right; padding: 4px 0; max-width: 60%; }
 .field-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--color-divider); padding-top: 14px; }
+.credits-row { border-top: 0; padding-top: 0; margin-top: -10px; }
+.num-box.w80 { width: 92px; }
 
 /* ---------- Intro ---------- */
 .ob { display: flex; flex-direction: column; gap: 24px; min-height: calc(100dvh - 76px); }
@@ -544,7 +554,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 /* ---------- Module page ---------- */
 .mod-title { display: flex; flex-direction: column; gap: 4px; margin-top: -8px; }
 .warn-line { font-size: 13px; line-height: 1.45; color: var(--bad); margin-top: 4px; }
-.tag-select { position: relative; display: inline-flex; max-width: 140px; }
+.tag-select { position: relative; display: inline-flex; max-width: 120px; }
 .tag-select span { font-size: 11px; padding: 3px 10px; background: var(--color-accent-100); color: var(--color-accent-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag-select select { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; font-size: 16px; }
 .tag-select:focus-within span { outline: 2px solid var(--color-accent); outline-offset: 2px; }
@@ -585,6 +595,42 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 .wi-row b { width: 44px; text-align: right; }
 
 .dates-sec { display: flex; flex-direction: column; gap: 6px; }
+.dates-sec .row-between { flex-wrap: wrap; row-gap: 4px; }
+
+/* Progress chart */
+.chart-sec { display: flex; flex-direction: column; gap: 10px; }
+.chart-sec > .row-between { flex-wrap: wrap; row-gap: 6px; align-items: baseline; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 14px; height: 2px; flex: none; }
+.sw.final { background: var(--series-final); }
+.sw.avg { background: var(--series-avg); }
+.sw.goal { height: 0; border-top: 1px dashed color-mix(in srgb, var(--color-text) 60%, transparent); }
+.chart-box { position: relative; min-height: 40px; touch-action: pan-y; }
+.chart-box svg { display: block; overflow: visible; }
+.chart-box .grid { stroke: var(--color-hair); stroke-width: 1; }
+.chart-box .axis { font: 500 11px var(--font-body); fill: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.chart-box .goal { stroke: var(--color-text); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.55; }
+.chart-box .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-box .line.final { stroke: var(--series-final); }
+.chart-box .line.avg { stroke: var(--series-avg); }
+.chart-box .pt { stroke: var(--color-bg); stroke-width: 2; paint-order: stroke; }
+.chart-box .pt.final { fill: var(--series-final); }
+.chart-box .pt.avg { fill: var(--series-avg); }
+.chart-box .end { font: 600 14px var(--font-heading); fill: var(--color-text); }
+.chart-box .cross { stroke: color-mix(in srgb, var(--color-text) 45%, transparent); stroke-width: 1; }
+.chart-tip {
+  position: absolute; top: -8px; transform: translateY(-100%); pointer-events: none; z-index: 2;
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; font-size: 12px; white-space: nowrap;
+  background: var(--color-bg); border: 1px solid var(--color-divider); box-shadow: var(--shadow-lg);
+}
+.chart-tip span { display: flex; align-items: center; gap: 6px; }
+.chart-empty { padding: 12px 0; border-top: 1px solid var(--color-hair); }
+
+/* Share dialog */
+.qr-box { align-self: center; width: 236px; min-height: 236px; padding: 8px; background: #fff; display: flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--color-divider); }
+.qr-box img, .qr-box canvas { display: block; width: 220px; height: 220px; }
+.qr-box .meta12 { color: #5d5d60; padding: 0 12px; }
 .de-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; grid-template-areas: "label date x" "count date x";
   column-gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--color-hair);
@@ -621,6 +667,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 .dlg-back { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--backdrop); }
 .dlg { width: 100%; max-width: 440px; background: var(--color-bg); box-shadow: var(--shadow-lg); padding: 22px; display: flex; flex-direction: column; gap: 12px; }
 .two-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.two-btns.one { grid-template-columns: 1fr; }
 
 /* ---------- Menu ---------- */
 .menu {

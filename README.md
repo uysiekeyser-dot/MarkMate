@@ -9,6 +9,10 @@ A website where students upload their module frameworks and get a mark calculato
 - **On a module's page:** your final mark so far, average and weight completed; **Final mark I want** (Pass 50, 60, Dist. 75 or your own number) with the mark you need; and the assessments. Tap an assessment to enter a mark (as `68` or `34/50`). Turn on **What-if** to try marks for the tests still to come. Tap the pencil to edit the name and weights.
 - **Key dates:** the dates of tests, exams and due dates are read from each framework. The **Key dates** tab lists every module's coming dates; fix or add dates at the bottom of a module's page.
 - Sort modules into folders (e.g. "Semester 1", "Semester 2"): tap **New folder**, open a folder and tap the pencil to rename it. Drag folders and modules by their grip handle to put them in your own order (works with a finger too); drop a module on a folder to move it there, or tap the folder tag at the top of a module's page. Choose **Save to folder** before adding to put new modules straight into a folder.
+- **Add to your calendar:** **To calendar** on a module's Key dates (or **Add all to my calendar** on the Key dates tab) adds the coming dates to your phone's calendar as all-day events with a reminder at 09:00 the day before.
+- **Share with classmates:** the share button on a module's page makes a link and QR code with the module's weights, groups, sub-minimums, rules and key dates (never your marks). A classmate opens it, checks the weights and saves the module, with no uploading.
+- **Credits:** add a module's credits on **Check the weights** (the pencil on its page). Once every module with marks has credits, the average on My modules and in each folder is weighted by credits.
+- **Progress:** each module's page has a chart of your final mark so far and your average on work done after each mark, with your goal as a dashed line. Tap or point at it to read the numbers.
 - The **⋯** menu on My modules has the AI reader, Install app, Backup, Restore and Auto / Light / Dark appearance.
 - Everything is saved automatically in your browser. Use **Backup** / **Restore** to move your marks to another device or browser.
 

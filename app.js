@@ -1195,6 +1195,8 @@ const ICONS = {
   monitor: '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8M12 17v4"/>',
   camera: '<path d="M14.5 4h-5L7 7H3v13h18V7h-4z"/><circle cx="12" cy="13" r="3"/>',
   hand: '<path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"/>',
+  share: '<path d="M4 12v9h16v-9M16 6l-4-4-4 4M12 2v13"/>',
+  calPlus: '<rect x="3" y="4" width="18" height="18"/><path d="M16 2v4M8 2v4M3 10h18M12 13v6M9 16h6"/>',
 };
 const ic = (name, size = 18) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -1449,7 +1451,10 @@ ACTIONS["ob-skip"] = () => { state.onboarded = true; saveState(); go("modules");
 
 function renderModules(el) {
   const mods = state.modules;
-  const avgs = mods.map(m => calculate(m).average).filter(x => x != null);
+  const avg = averageOf(mods);
+  const avgLabel = avg.weighted ? `All modules · weighted by ${fmt(avg.credits)} credits` : "All modules · average on work done";
+  const avgNote = avg.missing && avg.someCredits
+    ? `Add credits to ${avg.missing} more module${avg.missing === 1 ? "" : "s"} (pencil on its page) to weight this by credits.` : "";
   const nd = upcomingDates()[0];
   const onTrack = mods.filter(m => { const p = plan(m); return p.need === null ? p.finalSoFar >= p.goal : p.need <= 70; }).length;
   const loose = mods.filter(m => !m.folderId);
@@ -1464,8 +1469,9 @@ function renderModules(el) {
     </div>
     ${mods.length ? `
     <div class="blueprint stats2">${CORNERS}
-      <div class="cell wide"><div class="eyebrow">All modules · average on work done</div>
-        <div class="hero64">${avgs.length ? r1(avgs.reduce((a, b) => a + b, 0) / avgs.length) + "%" : "–"}</div></div>
+      <div class="cell wide"><div class="eyebrow">${avgLabel}</div>
+        <div class="hero64">${avg.value == null ? "–" : r1(avg.value) + "%"}</div>
+        ${avgNote ? `<div class="meta12">${avgNote}</div>` : ""}</div>
       <div class="cell"><div class="eyebrow">On track</div><div class="num26">${onTrack} of ${mods.length}</div></div>
       <button class="cell press" data-act="go-dates"><div class="eyebrow">Next date</div>
         <div class="num26 acc">${nd ? (nd.n === 0 ? "Today" : nd.n === 1 ? "Tomorrow" : nd.n + " days") : "–"}</div>
@@ -1518,7 +1524,10 @@ function folderHtml(f) {
           <button class="tool" data-act="folder-rename" aria-label="Rename folder">${ic("pencil", 16)}</button>
           <button class="tool del" data-act="folder-delete" aria-label="Delete folder">${ic("trash", 16)}</button>
         </span>
-        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}</span>
+        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}${(() => {
+          const a = averageOf(mods);
+          return a.value == null ? "" : ` · <b title="${a.weighted ? "Average on work done, weighted by credits" : "Average on work done"}">${r1(a.value)}%</b>`;
+        })()}</span>
         <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
       </div>
       <div class="folder-body"><div><ul class="mod-list inner">
@@ -1712,6 +1721,7 @@ function renderDates(el) {
       <h1 class="h-screen">Key dates</h1>
       <div class="meta14">Read from your frameworks. Today is ${esc(today)}.</div>
     </div>
+    ${items.length ? `<button class="btn-line h48" data-act="cal-all">${ic("calPlus", 18)}Add all to my calendar</button>` : ""}
     ${groups.length ? groups.map(g => `
       <div class="date-group">
         <div class="eyebrow group-label">${g.label}</div>
@@ -2080,7 +2090,7 @@ function renderReview(el) {
   const onlyCode = /^[A-Za-z]{2,10}\s?\d{3}[A-Za-z]?$/.test(mod.name.trim());
   const { code, title } = onlyCode ? { code: mod.name.trim().toUpperCase(), title: "" } : splitName(mod.name);
   const isNew = d.mode === "new";
-  const step = isNew ? (ui.job && ui.job.total > 1 ? `File ${ui.job.index} of ${ui.job.total} · Step 2 of 2` : ui.job ? "Step 2 of 2" : "Add by hand") : "Edit module";
+  const step = isNew ? (ui.job && ui.job.total > 1 ? `File ${ui.job.index} of ${ui.job.total} · Step 2 of 2` : ui.job ? "Step 2 of 2" : mod.shared ? "Shared module" : "Add by hand") : "Edit module";
 
   const rows = [];
   const shown = new Set();
@@ -2107,6 +2117,8 @@ function renderReview(el) {
       <input class="box-input strong" data-in="rv-code" value="${esc(code)}" placeholder="Code" aria-label="Module code">
       <input class="box-input" data-in="rv-title" value="${esc(code || onlyCode ? title : mod.name)}" placeholder="Module name" aria-label="Module name">
     </div>
+    <label class="field-row credits-row"><span class="meta14">Credits <span class="meta12">(for weighted averages)</span></span>
+      <span class="num-box w80"><input type="number" inputmode="decimal" step="any" min="0" data-in="rv-credits" value="${esc(mod.credits || "")}" placeholder="e.g. 16" aria-label="Credits"></span></label>
     <div class="rv-sum">
       <div id="rvSegs" class="segs"></div>
       <div class="row-between fs14"><span id="rvMsg"></span><b id="rvTotal" class="cond16"></b></div>
@@ -2262,7 +2274,7 @@ async function saveDraft() {
   m.groups = m.groups.filter(g => m.assessments.some(a => a.groupId === g.id));
   if (d.mode === "edit") {
     const mod = state.modules.find(x => x.id === m.id);
-    if (mod) Object.assign(mod, { name: m.name, groups: m.groups, assessments: m.assessments });
+    if (mod) Object.assign(mod, { name: m.name, credits: m.credits, groups: m.groups, assessments: m.assessments });
     ui.draft = null;
     saveState();
     go("module");
@@ -2294,7 +2306,8 @@ function renderModulePage(el) {
     : Math.abs(c.totalWeight - 100) > 0.01 ? `The weights add up to ${fmt(c.totalWeight, 2)}%, not 100%. Results are scaled to 100% for now; tap Edit to fix them.` : "";
   const source = mod.fileName
     ? `Read from ${mod.fileName}${mod.readBy === "ai" ? ` · by the AI${mod.aiInput === "pdf" ? " from the PDF" : mod.aiInput === "photo" ? " from a photo" : ""}` : ""}`
-    : mod.pasted ? "From pasted text" : "Added by hand";
+    : mod.pasted ? "From pasted text" : mod.shared ? "Shared by a classmate" : "Added by hand";
+  const credits = Number(mod.credits) > 0 ? ` · ${fmt(mod.credits)} credits` : "";
   const custom = !GOALS.some(([g]) => g === Number(mod.target));
 
   // Rows in framework order; a group's rows are shown together under its heading
@@ -2316,6 +2329,7 @@ function renderModulePage(el) {
       <div class="row-gap6">
         <label class="tag-select"><select data-ch="mod-folder" aria-label="Folder">${folderOptions(mod.folderId)}</select><span>${esc(folder ? folder.name : "No folder")}</span></label>
         ${aiOn() && mod.sourceText ? `<button class="sq-icon" data-act="reread" aria-label="Read again with AI" title="Read again with AI">${ic("sparkles", 20)}</button>` : ""}
+        <button class="sq-icon" data-act="share-module" aria-label="Share with classmates" title="Share with classmates">${ic("share", 20)}</button>
         <button class="sq-icon" data-act="edit-module" aria-label="Edit weights" title="Edit name and weights">${ic("pencil", 19)}</button>
         <button class="sq-icon" data-act="ask-delete" aria-label="Delete module" title="Delete module">${ic("trash", 20)}</button>
       </div>
@@ -2323,7 +2337,7 @@ function renderModulePage(el) {
     <div class="mod-title">
       ${code ? `<div class="m-code big">${esc(code)}</div>` : ""}
       <h1 class="h-screen h34">${esc(title)}</h1>
-      <div class="meta12">${esc(source)}</div>
+      <div class="meta12">${esc(source + credits)}</div>
       ${weightNote ? `<div class="warn-line">${esc(weightNote)}</div>` : ""}
     </div>
 
@@ -2362,8 +2376,15 @@ function renderModulePage(el) {
       <div class="meta12 pt10">Tap a row to enter a mark as a percentage (68) or a score (34/50).</div>
     </div>
 
+    <div id="chartSec" class="chart-sec" hidden>
+      <div class="row-between"><h2 class="h22">Progress</h2>
+        <div class="legend"><span><i class="sw final"></i>Final mark so far</span><span><i class="sw avg"></i>Average on work done</span><span><i class="sw goal"></i>Goal ${fmt(Number(mod.target) || 0)}%</span></div></div>
+      <div id="chartBox" class="chart-box"></div>
+    </div>
+
     <div class="dates-sec">
-      <div class="row-between"><h2 class="h22">Key dates</h2><button class="link-acc" data-act="add-date">${ic("plus", 16)}Add date</button></div>
+      <div class="row-between"><h2 class="h22">Key dates</h2>
+        <span class="row-gap12"><button class="link-acc" data-act="cal-module">${ic("calPlus", 16)}To calendar</button><button class="link-acc" data-act="add-date">${ic("plus", 16)}Add date</button></span></div>
       <div id="datesEdit">${datesEditorHtml(mod)}</div>
     </div>
 
@@ -2487,6 +2508,7 @@ function paintModule() {
   }
   const sw = document.querySelector(".switch");
   if (sw) sw.classList.toggle("on", ui.whatIf);
+  drawChart(mod, goal);
 }
 
 ACTIONS["leave-module"] = leaveModule;
@@ -2986,6 +3008,300 @@ $("importInput").addEventListener("change", async e => {
   }
 });
 
+// ---------- Credits: averages weighted by each module's credits ----------
+
+// Average on work done over several modules. Weighted by credits when every module with
+// marks has its credits filled in; otherwise a plain average (and how many still need credits).
+function averageOf(mods) {
+  const done = mods.map(m => ({ m, avg: calculate(m).average })).filter(x => x.avg != null);
+  if (!done.length) return { value: null, weighted: false, missing: 0, credits: 0 };
+  const credits = x => Number(x.m.credits) > 0 ? Number(x.m.credits) : 0;
+  const missing = done.filter(x => !credits(x)).length;
+  if (!missing) {
+    const total = done.reduce((s, x) => s + credits(x), 0);
+    return { value: done.reduce((s, x) => s + x.avg * credits(x), 0) / total, weighted: true, missing: 0, credits: total };
+  }
+  return { value: done.reduce((s, x) => s + x.avg, 0) / done.length, weighted: false, missing, someCredits: done.length > missing };
+}
+
+INPUTS["rv-credits"] = t => {
+  const v = parseFloat(String(t.value).replace(",", "."));
+  ui.draft.mod.credits = v > 0 ? v : undefined;
+};
+
+// ---------- Add key dates to the phone's calendar (.ics file) ----------
+// All-day events with a reminder at 09:00 the day before. Each date keeps the same id,
+// so adding them again updates the events in most calendar apps instead of doubling them.
+
+function calendarFile(mods) {
+  const text = s => String(s).replace(/[\\;,]/g, ch => "\\" + ch).replace(/\r?\n/g, "\\n");
+  // Lines longer than 75 characters are folded, as the calendar format requires
+  const fold = line => line.length <= 74 ? line : line.match(/.{1,73}/g).join("\r\n ");
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const nextDay = iso => {
+    const [y, m, d] = iso.split("-").map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d + 1));
+    return t.toISOString().slice(0, 10).replace(/-/g, "");
+  };
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Mark Calculator//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  let count = 0;
+  for (const m of mods) {
+    const { code, title } = splitName(m.name);
+    for (const d of m.dates || []) {
+      if (!d.date || !d.label || daysUntil(d.date) < 0) continue;
+      const a = assessmentFor(m, d.label);
+      const about = a ? `${d.label} counts ${fmt(effectiveWeight(m, a), 1)}% of your final mark for ${m.name}.` : `${m.name}`;
+      lines.push("BEGIN:VEVENT",
+        `UID:${m.id}-${d.id}@markcalculator`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;VALUE=DATE:${d.date.replace(/-/g, "")}`,
+        `DTEND;VALUE=DATE:${nextDay(d.date)}`,
+        fold(`SUMMARY:${text(`${code || title}: ${d.label}`)}`),
+        fold(`DESCRIPTION:${text(about)}`),
+        "TRANSP:TRANSPARENT",
+        "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15H", fold(`DESCRIPTION:${text(`Tomorrow: ${code || title} ${d.label}`)}`), "END:VALARM",
+        "END:VEVENT");
+      count++;
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return { ics: lines.join("\r\n") + "\r\n", count };
+}
+
+function addToCalendar(mods, name) {
+  const { ics, count } = calendarFile(mods);
+  if (!count) { showToast("There are no coming dates to add. Add dates on a module's page first."); return; }
+  const fileName = name.replace(/[^\w -]+/g, "").trim().replace(/\s+/g, "-") + ".ics";
+  if (isIos) {
+    // iPhone and iPad open a calendar file straight in Calendar ("Add All")
+    location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  showToast(`Downloaded ${count} date${count === 1 ? "" : "s"}. Open the file to add ${count === 1 ? "it" : "them"} to your calendar.`, 7000);
+}
+ACTIONS["cal-module"] = () => { const m = currentModule(); addToCalendar([m], `${m.name} key dates`); };
+ACTIONS["cal-all"] = () => addToCalendar(state.modules, "Key dates");
+
+// ---------- Share a module with classmates ----------
+// The link holds the module's weights, groups, rules and key dates (never marks), packed into
+// the part of the address after "#", which is never sent to a server.
+
+const toB64url = bytes => {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const fromB64url = str => {
+  const s = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(s, ch => ch.charCodeAt(0));
+};
+const streamBytes = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+
+async function shareLink(mod) {
+  const gi = id => mod.groups.findIndex(g => g.id === id);
+  const data = {
+    v: 1, n: mod.name, c: Number(mod.credits) || 0, t: Number(mod.target) || 50,
+    g: mod.groups.map(g => [g.name, Number(g.weight) || 0]),
+    a: mod.assessments.map(a => [a.name, Number(a.weight) || 0, a.groupId ? gi(a.groupId) : -1, a.isFinal ? 1 : 0, Number(a.subMin) || 0]),
+    r: mod.rules || [],
+    d: (mod.dates || []).filter(d => d.date && d.label).map(d => [d.date, d.label]),
+  };
+  const json = new TextEncoder().encode(JSON.stringify(data));
+  let payload = "j" + toB64url(json);
+  if (window.CompressionStream) {
+    try { payload = "z" + toB64url(await streamBytes(json, new CompressionStream("deflate-raw"))); } catch (e) { /* plain is fine */ }
+  }
+  return `${location.origin}${location.pathname}#m=${payload}`;
+}
+
+async function readShared(payload) {
+  let bytes = fromB64url(payload.slice(1));
+  if (payload[0] === "z") {
+    if (!window.DecompressionStream) throw new Error("This browser is too old to open shared modules. Update it, or open the link in Chrome or Safari.");
+    bytes = await streamBytes(bytes, new DecompressionStream("deflate-raw"));
+  }
+  const data = JSON.parse(new TextDecoder().decode(bytes));
+  if (!data || data.v !== 1 || !Array.isArray(data.a)) throw new Error("This link doesn't hold a module.");
+  const groups = (data.g || []).map(([name, weight]) => ({ id: uid(), name: String(name), weight: Number(weight) || 0 }));
+  return {
+    id: uid(), name: String(data.n || "Shared module"), fileName: "", shared: true,
+    credits: Number(data.c) > 0 ? Number(data.c) : undefined, target: Number(data.t) || 50,
+    folderId: state.uploadFolderId || null, groups,
+    assessments: data.a.map(([name, weight, g, fin, sub]) => ({
+      id: uid(), name: String(name), weight: Number(weight) || 0, mark: "", isFinal: !!fin,
+      groupId: groups[g] ? groups[g].id : null, subMin: Number(sub) > 0 ? Number(sub) : undefined,
+    })),
+    notes: [], rules: (data.r || []).map(String), dates: (data.d || []).map(([date, label]) => ({ id: uid(), date: String(date), label: String(label) })),
+  };
+}
+
+// Opening a shared link: the module goes to Check the weights, ready to save
+async function openSharedFromAddress() {
+  const m = location.hash.match(/^#m=([A-Za-z0-9_-]+)/);
+  if (!m) return false;
+  history.replaceState(null, "", location.pathname + location.search);
+  try {
+    const mod = await readShared(m[1]);
+    state.onboarded = true;
+    saveState();
+    ui.queue = [];
+    ui.job = null;
+    ui.draft = { mode: "new", mod };
+    go("review");
+    showToast("A classmate shared this module with you. Check the weights and tap Save module.", 7000);
+  } catch (err) {
+    console.warn(err);
+    showToast("Couldn't open the shared module: " + err.message, 8000);
+  }
+  return true;
+}
+window.addEventListener("hashchange", openSharedFromAddress);
+
+// Loads the QR code drawer only when someone shares (it's saved for offline use after that)
+let qrLoading = null;
+const loadQr = () => qrLoading || (qrLoading = new Promise((resolve, reject) => {
+  if (window.QRCode) return resolve();
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+  s.onload = resolve;
+  s.onerror = () => { qrLoading = null; reject(new Error("QR code unavailable offline")); };
+  document.head.appendChild(s);
+}));
+
+ACTIONS["share-module"] = async () => {
+  const mod = currentModule();
+  const { code, title } = splitName(mod.name);
+  const link = await shareLink(mod);
+  const layer = $("dlgLayer");
+  layer.innerHTML = `
+    <div class="dlg-back" data-act="dlg-cancel">
+      <div class="blueprint dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">${CORNERS}
+        <div id="dlgTitle" class="h24">Share ${esc(code || title)}</div>
+        <div class="fs14 lh15 dim8">Classmates get the weights, groups, rules and key dates, so they don't have to upload the framework. Your marks are not shared.</div>
+        <div id="qrBox" class="qr-box"><span class="meta12">Making the QR code…</span></div>
+        <div class="meta12 c">Scan with a phone camera, or send the link.</div>
+        <div class="two-btns">
+          <button class="btn-line h48" data-act="share-copy">Copy link</button>
+          <button class="blueprint btn-solid h48" data-act="share-send">${CORNERS}Send link</button>
+        </div>
+        <button class="link-acc center sm" data-act="dlg-cancel">Close</button>
+      </div>
+    </div>`;
+  layer.hidden = false;
+  layer.dataset.link = link;
+  const dlg = layer.querySelector(".dlg");
+  dlg.addEventListener("click", e => { if (!e.target.closest("[data-act]")) e.stopPropagation(); });
+  dlg.animate([{ opacity: 0, transform: reduceMotion() ? "none" : "scale(0.96)" }, { opacity: 1, transform: "none" }], { duration: 200, easing: EASE_OUT });
+  layer.querySelector(".dlg-back").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" });
+  if (!navigator.share) {
+    layer.querySelector('[data-act="share-send"]').hidden = true;
+    layer.querySelector(".two-btns").classList.add("one");
+  }
+  try {
+    await loadQr();
+    const box = $("qrBox");
+    if (!box) return;
+    box.innerHTML = "";
+    new QRCode(box, { text: link, width: 220, height: 220, colorDark: "#1d1f20", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.L });
+    box.removeAttribute("title"); // the library puts the whole link in a tooltip
+  } catch (err) {
+    const box = $("qrBox");
+    if (box) box.innerHTML = `<span class="meta12">${err.message.includes("offline") ? "The QR code needs internet the first time. Copy or send the link instead." : "This module is too big for a QR code. Copy or send the link instead."}</span>`;
+  }
+};
+ACTIONS["share-copy"] = async () => {
+  const link = $("dlgLayer").dataset.link;
+  try { await navigator.clipboard.writeText(link); showToast("Link copied. Paste it in a message to your classmates.", 4000); }
+  catch (e) { prompt("Copy this link:", link); }
+};
+ACTIONS["share-send"] = async () => {
+  const mod = currentModule();
+  try { await navigator.share({ title: `${mod.name} for Mark Calculator`, text: `${mod.name}: weights and key dates for Mark Calculator`, url: $("dlgLayer").dataset.link }); }
+  catch (e) { /* cancelled */ }
+};
+
+// ---------- Progress chart: the final mark so far and the average after each mark ----------
+// One line per measure, both in % on one axis, with the goal as a dashed line. Marks are taken
+// in the order the framework lists the assessments (usually the order they're written).
+
+function progressPoints(mod) {
+  const c = calculate(mod);
+  const scale = c.totalWeight > 0 ? 100 / c.totalWeight : 0;
+  let earned = 0, done = 0;
+  return c.rows.filter(r => hasMark(r) && r.weight > 0).map(r => {
+    earned += r.pct * r.weight / 100;
+    done += r.weight;
+    return { name: r.a.name || "Unnamed", mark: r.pct, final: earned * scale, avg: earned / done * 100 };
+  });
+}
+
+function drawChart(mod, goal) {
+  const box = $("chartBox");
+  if (!box) return;
+  const pts = progressPoints(mod);
+  $("chartSec").hidden = false;
+  if (pts.length < 2) {
+    box.innerHTML = `<div class="meta13 chart-empty">The chart appears once you have marks for two assessments.</div>`;
+    return;
+  }
+  const W = Math.max(260, box.clientWidth), H = 190;
+  const pad = { l: 34, r: 46, t: 12, b: 26 };
+  const x = i => pad.l + (W - pad.l - pad.r) * (i / (pts.length - 1));
+  const y = v => pad.t + (H - pad.t - pad.b) * (1 - clamp(v, 0, 100) / 100);
+  const path = key => pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join("");
+  const short = s => (s.length > 14 ? s.slice(0, 13) + "…" : s);
+  const last = pts[pts.length - 1];
+  // Direct labels at the end of each line, kept apart if they're close
+  let yf = y(last.final), ya = y(last.avg);
+  if (Math.abs(yf - ya) < 14) { const mid = (yf + ya) / 2; const up = yf < ya ? -7 : 7; yf = mid + up; ya = mid - up; }
+  box.innerHTML = `
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Final mark so far went from ${r1(pts[0].final)}% to ${r1(last.final)}%; average on work done is ${r1(last.avg)}%.">
+      ${[0, 25, 50, 75, 100].map(v => `<line class="grid" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
+      <line class="goal" x1="${pad.l}" x2="${W - pad.r}" y1="${y(goal)}" y2="${y(goal)}"/>
+      <path class="line avg" d="${path("avg")}"/>
+      <path class="line final" d="${path("final")}"/>
+      ${pts.map((p, i) => `<rect class="pt avg" x="${x(i) - 4}" y="${y(p.avg) - 4}" width="8" height="8"/><rect class="pt final" x="${x(i) - 4}" y="${y(p.final) - 4}" width="8" height="8"/>`).join("")}
+      <text class="end final" x="${W - pad.r + 8}" y="${yf + 4}">${r1(last.final)}%</text>
+      <text class="end avg" x="${W - pad.r + 8}" y="${ya + 4}">${r1(last.avg)}%</text>
+      <text class="axis" x="${pad.l}" y="${H - 6}">${esc(short(pts[0].name))}</text>
+      <text class="axis" x="${W - pad.r}" y="${H - 6}" text-anchor="end">${esc(short(last.name))}</text>
+      <line class="cross" x1="0" x2="0" y1="${pad.t}" y2="${H - pad.b}" visibility="hidden"/>
+    </svg>
+    <div class="chart-tip" hidden></div>`;
+
+  // Point at (or drag a finger along) the chart to read the numbers after each mark
+  const svg = box.querySelector("svg"), cross = svg.querySelector(".cross"), tip = box.querySelector(".chart-tip");
+  const show = e => {
+    const r = svg.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    let i = Math.round((px - pad.l) / ((W - pad.l - pad.r) / (pts.length - 1)));
+    i = clamp(i, 0, pts.length - 1);
+    const p = pts[i];
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+    cross.setAttribute("visibility", "visible");
+    tip.hidden = false;
+    tip.innerHTML = `<b>After ${esc(p.name)}</b> (${r1(p.mark)}%)<span><i class="sw final"></i>Final so far ${r1(p.final)}%</span><span><i class="sw avg"></i>Average ${r1(p.avg)}%</span>`;
+    const left = clamp(x(i) - tip.offsetWidth / 2, 0, W - tip.offsetWidth);
+    tip.style.left = left + "px";
+  };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  svg.addEventListener("pointermove", show);
+  svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointerleave", hide);
+}
+window.addEventListener("resize", () => {
+  if (ui.screen !== "module") return;
+  clearTimeout(drawChart.t);
+  drawChart.t = setTimeout(() => { const m = currentModule(); if (m) drawChart(m, Number(m.target) || 0); }, 150);
+});
+
 // ---------- Start ----------
 // The intro the first time; after that, the clean list with every folder closed
 
@@ -2994,3 +3310,4 @@ state.folders.forEach(f => (f.collapsed = true));
 if (state.modules.length) state.onboarded = true;
 ui.screen = state.onboarded ? "modules" : "onboarding";
 render();
+openSharedFromAddress();
