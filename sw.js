@@ -8,7 +8,7 @@
  *
  * Change CACHE when the list below changes, so old copies are cleared out.
  */
-const CACHE = "mark-calculator-v5";
+const CACHE = "mark-calculator-v6";
 
 const SITE_FILES = [
   "./",
@@ -56,9 +56,29 @@ self.addEventListener("fetch", event => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.origin === self.location.origin) event.respondWith(newestFirst(req));
+  if (url.origin === self.location.origin && url.pathname.endsWith("/calendar.ics")) event.respondWith(calendarFile(url));
+  else if (url.origin === self.location.origin) event.respondWith(newestFirst(req));
   else if (SAVED_FIRST_HOSTS.includes(url.hostname)) event.respondWith(savedFirst(req));
 });
+
+// "Add to calendar": the app puts the calendar file in the address (calendar.ics?d=...) and this
+// hands it back as a real calendar file, which iPhone Safari opens in Calendar ("Add All").
+// (The site has no server, and Safari won't open calendar files made inside the page.)
+function calendarFile(url) {
+  try {
+    const b64 = (url.searchParams.get("d") || "").replace(/-/g, "+").replace(/_/g, "/");
+    const ics = new TextDecoder().decode(Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)));
+    if (!ics.startsWith("BEGIN:VCALENDAR")) throw new Error("not a calendar");
+    return new Response(ics, {
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": `inline; filename="${(url.searchParams.get("n") || "key-dates").replace(/[^\w-]+/g, "")}.ics"`,
+      },
+    });
+  } catch (e) {
+    return new Response("This calendar link is broken. Go back and tap Add to calendar again.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
+}
 
 async function newestFirst(req) {
   const cache = await caches.open(CACHE);

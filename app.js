@@ -3166,23 +3166,34 @@ function calendarFile(mods) {
   return { ics: lines.join("\r\n") + "\r\n", count };
 }
 
-function addToCalendar(mods, name) {
+async function addToCalendar(mods, name) {
   const { ics, count } = calendarFile(mods);
   if (!count) { showToast("There are no coming dates to add. Add dates on a module's page first."); return; }
-  const fileName = name.replace(/[^\w -]+/g, "").trim().replace(/\s+/g, "-") + ".ics";
+  const base = name.replace(/[^\w -]+/g, "").trim().replace(/\s+/g, "-") || "key-dates";
   if (isIos) {
-    // iPhone and iPad open a calendar file straight in Calendar ("Add All")
-    location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
-    return;
+    // Safari only opens a calendar file in Calendar ("Add All") when it comes from the website,
+    // so the offline helper (sw.js) hands it back from this address
+    const url = new URL("calendar.ics", location.href);
+    url.searchParams.set("n", base);
+    url.searchParams.set("d", toB64url(new TextEncoder().encode(ics)));
+    try {
+      const res = navigator.serviceWorker && navigator.serviceWorker.controller ? await fetch(url) : null;
+      if (res && res.ok && /text\/calendar/.test(res.headers.get("Content-Type") || "")) {
+        location.href = url.href;
+        return;
+      }
+    } catch (e) { /* fall back to a download below */ }
   }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-  a.download = fileName;
+  a.download = base + ".ics";
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  showToast(`Downloaded ${count} date${count === 1 ? "" : "s"}. Open the file to add ${count === 1 ? "it" : "them"} to your calendar.`, 7000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  showToast(isIos
+    ? `Downloaded ${count} date${count === 1 ? "" : "s"}. Open Files → Downloads and tap the file to add ${count === 1 ? "it" : "them"} to Calendar.`
+    : `Downloaded ${count} date${count === 1 ? "" : "s"}. Open the file to add ${count === 1 ? "it" : "them"} to your calendar.`, 8000);
 }
 ACTIONS["cal-module"] = () => { const m = currentModule(); addToCalendar([m], `${m.name} key dates`); };
 ACTIONS["cal-all"] = () => addToCalendar(state.modules, "Key dates");
