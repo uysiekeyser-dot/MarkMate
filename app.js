@@ -1196,6 +1196,8 @@ const ICONS = {
   camera: '<path d="M14.5 4h-5L7 7H3v13h18V7h-4z"/><circle cx="12" cy="13" r="3"/>',
   hand: '<path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"/>',
   share: '<path d="M4 12v9h16v-9M16 6l-4-4-4 4M12 2v13"/>',
+  alert: '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
   calPlus: '<rect x="3" y="4" width="18" height="18"/><path d="M16 2v4M8 2v4M3 10h18M12 13v6M9 16h6"/>',
 };
 const ic = (name, size = 18) =>
@@ -1331,6 +1333,7 @@ function go(screen, extra = {}) {
 
 function render() {
   const s = ui.screen;
+  ui.entering = !!ui.anim;
   for (const [key, id] of Object.entries(SCREENS)) $(id).hidden = key !== s;
   $("tabBar").hidden = !(s === "modules" || s === "dates");
   const el = $(SCREENS[s]);
@@ -1403,25 +1406,34 @@ const OB = [
   ["Know", "Once every mark except the last test is entered, you'll see what you need in that test."],
 ];
 
+// Each step shows a small, real-looking piece of the app (built from the same parts)
 function obFigure(step) {
   if (step === 0) {
-    const doc = [["72%", ""], ["48%", "15%"], ["58%", "10%"], ["40%", "15%"], ["64%", "10%"], ["34%", "50%"], ["86%", ""], ["62%", ""]];
-    return `<div class="ob-art"><div class="eyebrow">Module framework · p.4</div>${doc.map(([w, p]) =>
-      `<div class="ob-line"><i style="width:${w}" class="${p ? "hit" : ""}"></i><b>${p}</b></div>`).join("")}</div>`;
+    const lines = [
+      ["MODULE FRAMEWORK – BIO 112", "Module"], ["Assessment plan", ""], ["Class Test 1          15%", "15%"],
+      ["Assignment 1          10%", "10%"], ["Class Test 2          15%", "15%"], ["Practical Report      10%", "10%"],
+      ["A2 (Final test)       50%", "50%"], ["Sub-minimum of 40% in A2", "Rule"],
+    ];
+    return `<div class="ob-art"><div class="eyebrow">Reading framework</div><div class="ob-lines">${lines.map(([t, tag]) =>
+      `<div class="ln seen${tag ? " hit" : ""}"><span>${t}</span><b>${tag}</b></div>`).join("")}</div></div>`;
   }
   if (step === 1) {
-    const ws = [["Class Test 1", 15], ["Assignment 1", 10], ["Class Test 2", 15], ["Practical Report", 10], ["A2", 50]];
-    return `<div class="ob-art gap12">${ws.map(([n, p]) =>
-      `<div class="ob-w"><span>${n}</span><span class="track"><i style="width:${p * 2}%"></i></span><b>${p}%</b></div>`).join("")}
-      <div class="ob-total"><span>Total</span><b>100%</b></div></div>`;
+    const ws = [["Class Test 1", 15, 0], ["Assignment 1", 10, 0], ["Class Test 2", 15, 0], ["Practical Report", 10, 0], ["A2 (Final test)", 50, 1]];
+    return `<div class="ob-art gap8">
+      <div class="segs">${ws.map(([, p, f]) => `<i style="flex:${p};background:var(--color-accent-${f ? 700 : 400})"></i>`).join("")}</div>
+      <div class="row-between fs13"><span class="acc7">Weights add up to 100%</span><b class="cond16 acc7">100%</b></div>
+      ${ws.map(([n, p, f]) => `<div class="ob-rv"><span>${n}</span><span class="num-box"><b>${p}</b><span>%</span></span><span class="dot${f ? " on" : ""}"><i></i></span></div>`).join("")}
+    </div>`;
   }
   if (step === 2) {
-    return `<div class="ob-art gap10"><div class="eyebrow">Final mark so far</div><div class="hero76">34.8%</div>
-      <div class="bar10"><i style="width:34.8%"></i><b style="left:50%"></b></div>
-      <div class="meta13">40% of the module marked · goal 50%</div></div>`;
+    return `<div class="ob-art gap12"><ul class="mod-list">${exampleRowHtml()}</ul>
+      <div class="ob-sheet"><div class="meta12">Class Test 2 · 15% of the final mark</div><div class="ob-mark">34/50</div><div class="meta12">= 68%</div></div></div>`;
   }
-  return `<div class="ob-art gap6 start"><div class="eyebrow">You need in A2</div><div class="hero96">47%</div>
-    <div>to finish on 50%. Sub-minimum 40%.</div></div>`;
+  return `<div class="goal-panel ob-goal">
+      <div class="eyebrow on-dark">Final mark I want · 50%</div>
+      <div class="need-row"><div class="hero64">47%</div><div class="fs14 lh135">needed in A2 to finish on 50%</div></div>
+      <div class="sub-note">A2 has a 40% sub-minimum, so you need at least that there.</div>
+    </div>`;
 }
 
 function renderOnboarding(el) {
@@ -1449,15 +1461,64 @@ ACTIONS["ob-skip"] = () => { state.onboarded = true; saveState(); go("modules");
 
 // ---- 2. My modules ----
 
+// Module colours: seven hues checked for colour-blind separation in light and dark mode.
+// Red isn't one of them: it's kept for "at risk". The module's name is always shown next to it.
+const MODULE_COLOURS = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet"];
+// Each module without a colour gets the first one not used yet (in this fixed order)
+function ensureColours() {
+  for (const m of state.modules) {
+    if (MODULE_COLOURS.includes(m.color)) continue;
+    const used = new Set(state.modules.map(x => x.color));
+    m.color = MODULE_COLOURS.find(c => !used.has(c)) || MODULE_COLOURS[state.modules.indexOf(m) % MODULE_COLOURS.length];
+  }
+}
+const swatch = m => `<i class="mc mc-${MODULE_COLOURS.includes(m.color) ? m.color : "blue"}" aria-hidden="true"></i>`;
+
+// Has the module reached (banked) its goal?
+const goalMet = p => p.rows.length > 0 && (p.need === null ? p.finalSoFar >= p.goal : p.need <= 0);
+
+// "in 2 days" as a short tag: "today", "tomorrow", "2 days"
+const shortWhen = n => (n === 0 ? "today" : n === 1 ? "tomorrow" : `${n} days`);
+
+// The next test or due date, big, with what it counts and what you need in it
+function nextUpHtml() {
+  const nd = upcomingDates()[0];
+  if (!nd) {
+    return `
+      <div class="blueprint next-up">${CORNERS}
+        <div class="eyebrow">Next up</div>
+        <div class="nu-what">Nothing coming up</div>
+        <div class="meta13">Dates of tests and due dates show here. Add them on a module's page if the framework had none.</div>
+      </div>`;
+  }
+  const m = nd.m, p = plan(m), a = assessmentFor(m, nd.d.label);
+  const { code, title } = splitName(m.name);
+  let need = statusOf(m).text, bad = statusOf(m).bad;
+  if (a && !String(a.mark ?? "").trim()) {
+    if (p.need === null) need = "";
+    else if (p.need <= 0) { need = "Your goal is already banked"; bad = false; }
+    else if (p.need > 100) { need = "Your goal is out of reach"; bad = true; }
+    else if (p.onlyFinal && p.finalRow.a === a) { need = `You need ${Math.ceil(Math.max(p.need, Number(a.subMin) || 0))}%`; bad = p.need > 70; }
+    else { need = `You need ${Math.ceil(p.need)}% on average`; bad = p.need > 70; }
+  }
+  const counts = a ? `Counts ${fmt(effectiveWeight(m, a), 1)}%` : "";
+  return `
+    <button class="blueprint next-up press" data-act="open-module" data-id="${m.id}">${CORNERS}
+      <span class="row-between"><span class="eyebrow">Next up</span><span class="nu-when${nd.n <= 7 ? " soon" : ""}">${whenText(nd.n)}</span></span>
+      <span class="nu-what">${esc(nd.d.label)}</span>
+      <span class="nu-mod">${swatch(m)}${esc(code ? `${code} · ${title}` : title)} · ${dayMonth(nd.d.date)}</span>
+      ${counts || need ? `<span class="nu-need">${counts ? `<span>${counts}</span>` : ""}${need ? `<b class="${bad ? "bad-text" : "acc7"}">${esc(need)}</b>` : ""}</span>` : ""}
+    </button>`;
+}
+
 function renderModules(el) {
   const mods = state.modules;
   const avg = averageOf(mods);
-  const avgLabel = avg.weighted ? `All modules · weighted by ${fmt(avg.credits)} credits` : "All modules · average on work done";
   const avgNote = avg.missing && avg.someCredits
-    ? `Add credits to ${avg.missing} more module${avg.missing === 1 ? "" : "s"} (pencil on its page) to weight this by credits.` : "";
-  const nd = upcomingDates()[0];
+    ? `Add credits to ${avg.missing} more module${avg.missing === 1 ? "" : "s"} (pencil on its page) to weight the average by credits.` : "";
   const onTrack = mods.filter(m => { const p = plan(m); return p.need === null ? p.finalSoFar >= p.goal : p.need <= 70; }).length;
   const loose = mods.filter(m => !m.folderId);
+  const entering = ui.entering;
 
   el.innerHTML = `
     <div class="screen-head">
@@ -1468,18 +1529,16 @@ function renderModules(el) {
       </div>
     </div>
     ${mods.length ? `
-    <div class="blueprint stats2">${CORNERS}
-      <div class="cell wide"><div class="eyebrow">${avgLabel}</div>
-        <div class="hero64">${avg.value == null ? "–" : r1(avg.value) + "%"}</div>
-        ${avgNote ? `<div class="meta12">${avgNote}</div>` : ""}</div>
-      <div class="cell"><div class="eyebrow">On track</div><div class="num26">${onTrack} of ${mods.length}</div></div>
-      <button class="cell press" data-act="go-dates"><div class="eyebrow">Next date</div>
-        <div class="num26 acc">${nd ? (nd.n === 0 ? "Today" : nd.n === 1 ? "Tomorrow" : nd.n + " days") : "–"}</div>
-        <div class="meta12">${nd ? `${esc(nd.d.label)} · ${esc(splitName(nd.m.name).code || splitName(nd.m.name).title)}` : "Nothing coming up"}</div></button>
-    </div>` : `
+    ${nextUpHtml()}
+    <div class="summary-row">
+      <span><b data-count="${avg.value ?? ""}">${avg.value == null ? "–" : r1(avg.value) + "%"}</b> ${avg.weighted ? `average · by ${fmt(avg.credits)} credits` : "average on work done"}</span>
+      <span><b>${onTrack} of ${mods.length}</b> on track</span>
+    </div>
+    ${avgNote ? `<div class="meta12 summary-note">${avgNote}</div>` : ""}` : `
     <div class="blueprint empty">${CORNERS}
       <div class="eyebrow">No modules yet</div>
-      <p>Upload a module framework and the calculator finds every test and assignment with its weight.</p>
+      <p>Upload a module framework and the calculator finds every test and assignment with its weight. Your modules will look like this:</p>
+      <ul class="mod-list ghost" aria-hidden="true">${exampleRowHtml()}</ul>
       <button class="blueprint btn-solid" data-act="go-add">${CORNERS}Add your first module</button>
     </div>`}
     <ul id="moduleList" class="mod-list">
@@ -1493,13 +1552,12 @@ function renderModules(el) {
     </div>`;
 
   el.querySelectorAll(".folder").forEach(li => {
-    const f = state.folders.find(x => x.id === li.dataset.fid);
     makeSortable(li.querySelector(".folder-head .sort-handle"), li, {
       siblings: () => [...$("moduleList").children].filter(c => c.classList.contains("folder")),
       onReorder: (from, to) => { state.folders.splice(to, 0, state.folders.splice(from, 1)[0]); saveState(); render(); },
     });
   });
-  el.querySelectorAll(".mod-item").forEach(li => {
+  el.querySelectorAll("#moduleList .mod-item").forEach(li => {
     makeSortable(li.querySelector(".sort-handle"), li, {
       siblings: () => [...li.parentElement.children].filter(c => c.classList.contains("mod-item")),
       onReorder: (from, to) => {
@@ -1510,11 +1568,16 @@ function renderModules(el) {
       onDropFolder: fid => moveModule(li.dataset.mid, fid),
     });
   });
+  if (entering) introduce(el);
 }
 
+// A folder's heading: name, how many modules, its average, and a thin bar of that average
+// against the folder's goals along the bottom edge
 function folderHtml(f) {
   const mods = state.modules.filter(m => m.folderId === f.id);
   const open = !f.collapsed;
+  const a = averageOf(mods);
+  const goal = mods.length ? mods.reduce((s, m) => s + (Number(m.target) || 0), 0) / mods.length : 50;
   return `
     <li class="folder${open ? "" : " collapsed"}" data-fid="${f.id}">
       <div class="folder-head" role="button" tabindex="0" aria-expanded="${open}" data-act="folder-toggle">
@@ -1524,11 +1587,10 @@ function folderHtml(f) {
           <button class="tool" data-act="folder-rename" aria-label="Rename folder">${ic("pencil", 16)}</button>
           <button class="tool del" data-act="folder-delete" aria-label="Delete folder">${ic("trash", 16)}</button>
         </span>
-        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}${(() => {
-          const a = averageOf(mods);
-          return a.value == null ? "" : ` · <b title="${a.weighted ? "Average on work done, weighted by credits" : "Average on work done"}">${r1(a.value)}%</b>`;
-        })()}</span>
+        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}${a.value == null ? "" :
+          ` · <b title="${a.weighted ? "Average on work done, weighted by credits" : "Average on work done"}">${r1(a.value)}%</b>`}</span>
         <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
+        ${a.value == null ? "" : `<span class="f-bar" aria-hidden="true"><i class="${a.value >= goal ? "done" : ""}" style="transform:scaleX(${clamp(a.value, 0, 100) / 100})"></i><b style="left:${clamp(goal, 0, 100)}%"></b></span>`}
       </div>
       <div class="folder-body"><div><ul class="mod-list inner">
         ${mods.length ? mods.map(moduleRowHtml).join("") : `<li class="folder-empty">No modules yet. Drag one onto this folder, or pick it under <b>Save to folder</b> when you add a module.</li>`}
@@ -1536,28 +1598,45 @@ function folderHtml(f) {
     </li>`;
 }
 
-// Code, name, final mark so far, a bar with the goal marked, the next date and where it stands
+// Colour, code, name, final mark so far, a bar with the goal marked, where it stands, and the
+// next date as a small tag. Modules at risk get a red edge and a warning sign.
 function moduleRowHtml(m) {
   const p = plan(m);
   const st = statusOf(m);
   const { code, title } = splitName(m.name);
   const nx = nextDate(m);
-  const next = nx ? `${esc(nx.label)} · ${whenText(nx.days).toLowerCase()}` : p.rows.length && !p.pending.length ? "All marks in" : "No dates";
-  const reached = p.finalSoFar >= p.goal && p.finalSoFar > 0;
+  const reached = goalMet(p) && p.finalSoFar > 0;
+  const good = !st.bad && (st.text === "Goal reached" || st.text === "Passed");
+  const tagLabel = nx ? (nx.label.length > 14 ? nx.label.slice(0, 13) + "…" : nx.label) : "";
   return `
-    <li class="mod-item" data-mid="${m.id}">
+    <li class="mod-item${st.bad ? " risk" : ""}" data-mid="${m.id}">
       <button class="mod-row" data-act="open-module" data-id="${m.id}">
         <span class="m-top">
-          <span class="m-names">${code ? `<span class="m-code">${esc(code)}</span>` : ""}<span class="m-name">${esc(title)}</span></span>
-          <span class="m-final">${r1(p.finalSoFar)}%</span>
+          <span class="m-names"><span class="m-code">${swatch(m)}${esc(code)}</span><span class="m-name">${esc(title)}</span></span>
+          <span class="m-final" data-count="${p.finalSoFar}">${r1(p.finalSoFar)}%</span>
         </span>
         <span class="bar6"><i class="${reached ? "done" : ""}" style="transform:scaleX(${clamp(p.finalSoFar, 0, 100) / 100})"></i><b style="left:${clamp(p.goal, 0, 100)}%"></b></span>
         <span class="m-foot">
-          <span class="m-next">${ic("cal", 14)}<span>${next}</span></span>
-          <span class="m-status${st.bad ? " bad" : st.text === "Goal reached" || st.text === "Passed" ? " good" : ""}">${esc(st.text)}</span>
+          <span class="m-status${st.bad ? " bad" : good ? " good" : ""}">${st.bad ? ic("alert", 14) : good ? ic("check", 14) : ""}<span>${esc(st.text)}</span></span>
+          ${nx ? `<span class="date-tag${nx.days <= 7 ? " soon" : ""}">${esc(tagLabel)} · ${shortWhen(nx.days)}</span>` : ""}
         </span>
       </button>
       <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
+    </li>`;
+}
+
+// What a module looks like, for the empty list and the intro
+function exampleRowHtml() {
+  return `
+    <li class="mod-item example">
+      <span class="mod-row">
+        <span class="m-top">
+          <span class="m-names"><span class="m-code"><i class="mc mc-blue"></i>BIO 112</span><span class="m-name">Cell Biology</span></span>
+          <span class="m-final">34.8%</span>
+        </span>
+        <span class="bar6"><i style="transform:scaleX(0.348)"></i><b style="left:50%"></b></span>
+        <span class="m-foot"><span class="m-status"><span>Need 47% in A2</span></span><span class="date-tag soon">A2 · 3 days</span></span>
+      </span>
     </li>`;
 }
 
@@ -1733,7 +1812,7 @@ function renderDates(el) {
           return `
           <button class="date-row press" data-act="open-module-dates" data-id="${x.m.id}">
             <span class="date-box${soon ? " soon" : ""}"><b>${Number(x.d.date.slice(8))}</b><span>${MON[Number(x.d.date.slice(5, 7)) - 1]}</span></span>
-            <span class="date-what"><span class="date-name">${esc(x.d.label)}</span><span class="meta13">${esc(code || title)}${weight}</span></span>
+            <span class="date-what"><span class="date-name">${esc(x.d.label)}</span><span class="meta13">${swatch(x.m)}${esc(code || title)}${weight}</span></span>
             <span class="date-when${soon ? " soon" : ""}">${whenText(x.n)}</span>
           </button>`;
         }).join("")}
@@ -2086,6 +2165,11 @@ function renderReview(el) {
   const d = ui.draft;
   if (!d) return go("modules");
   const mod = d.mod;
+  // New modules get a free colour to start with
+  if (!MODULE_COLOURS.includes(mod.color)) {
+    const used = new Set(state.modules.map(x => x.color));
+    mod.color = MODULE_COLOURS.find(c => !used.has(c)) || MODULE_COLOURS[state.modules.length % MODULE_COLOURS.length];
+  }
   // A name that is only a code ("CHE 132") goes in the Code box
   const onlyCode = /^[A-Za-z]{2,10}\s?\d{3}[A-Za-z]?$/.test(mod.name.trim());
   const { code, title } = onlyCode ? { code: mod.name.trim().toUpperCase(), title: "" } : splitName(mod.name);
@@ -2119,6 +2203,8 @@ function renderReview(el) {
     </div>
     <label class="field-row credits-row"><span class="meta14">Credits <span class="meta12">(for weighted averages)</span></span>
       <span class="num-box w80"><input type="number" inputmode="decimal" step="any" min="0" data-in="rv-credits" value="${esc(mod.credits || "")}" placeholder="e.g. 16" aria-label="Credits"></span></label>
+    <div class="field-row colour-row"><span class="meta14">Colour</span>
+      <span class="colour-pick">${MODULE_COLOURS.map(c => `<button class="mc-btn${mod.color === c ? " on" : ""}" data-act="rv-colour" data-c="${c}" aria-label="${c}" aria-pressed="${mod.color === c}"><i class="mc mc-${c}"></i></button>`).join("")}</span></div>
     <div class="rv-sum">
       <div id="rvSegs" class="segs"></div>
       <div class="row-between fs14"><span id="rvMsg"></span><b id="rvTotal" class="cond16"></b></div>
@@ -2274,7 +2360,7 @@ async function saveDraft() {
   m.groups = m.groups.filter(g => m.assessments.some(a => a.groupId === g.id));
   if (d.mode === "edit") {
     const mod = state.modules.find(x => x.id === m.id);
-    if (mod) Object.assign(mod, { name: m.name, credits: m.credits, groups: m.groups, assessments: m.assessments });
+    if (mod) Object.assign(mod, { name: m.name, credits: m.credits, color: m.color, groups: m.groups, assessments: m.assessments });
     ui.draft = null;
     saveState();
     go("module");
@@ -2335,7 +2421,7 @@ function renderModulePage(el) {
       </div>
     </div>
     <div class="mod-title">
-      ${code ? `<div class="m-code big">${esc(code)}</div>` : ""}
+      <div class="m-code big">${swatch(mod)}${esc(code)}</div>
       <h1 class="h-screen h34">${esc(title)}</h1>
       <div class="meta12">${esc(source + credits)}</div>
       ${weightNote ? `<div class="warn-line">${esc(weightNote)}</div>` : ""}
@@ -2390,6 +2476,7 @@ function renderModulePage(el) {
 
     ${notesRulesHtml(mod)}`;
   paintModule();
+  if (ui.entering) introduceModule();
 }
 
 function moduleGroupHtml(mod, g) {
@@ -2688,12 +2775,14 @@ ACTIONS["sheet-save"] = () => {
   const raw = $("sheetInput").value.trim();
   const v = parseMark(raw);
   if (v !== null && Number.isNaN(v)) { $("sheetInput").focus(); return; }
+  const before = goalMet(plan(mod));
   a.mark = raw;
   ui.wi = {};
   saveState();
-  buzz();
+  const after = plan(mod);
   closeSheet();
   paintModule();
+  if (!before && goalMet(after)) celebrate(after); else buzz();
 };
 ACTIONS["sheet-clear"] = () => {
   const mod = currentModule();
@@ -2999,6 +3088,7 @@ $("importInput").addEventListener("change", async e => {
     state = upgradeState(data);
     state.modules.forEach(m => (m.dates || []).forEach(d => { if (!d.id) d.id = uid(); }));
     state.onboarded = true;
+    ensureColours();
     state.selectedId = null;
     saveState();
     go("modules");
@@ -3024,6 +3114,10 @@ function averageOf(mods) {
   return { value: done.reduce((s, x) => s + x.avg, 0) / done.length, weighted: false, missing, someCredits: done.length > missing };
 }
 
+ACTIONS["rv-colour"] = t => {
+  ui.draft.mod.color = t.dataset.c;
+  document.querySelectorAll(".mc-btn").forEach(b => { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+};
 INPUTS["rv-credits"] = t => {
   const v = parseFloat(String(t.value).replace(",", "."));
   ui.draft.mod.credits = v > 0 ? v : undefined;
@@ -3032,6 +3126,9 @@ INPUTS["rv-credits"] = t => {
 // ---------- Add key dates to the phone's calendar (.ics file) ----------
 // All-day events with a reminder at 09:00 the day before. Each date keeps the same id,
 // so adding them again updates the events in most calendar apps instead of doubling them.
+
+// Nearest colour names (calendar files only take names); some calendar apps ignore them
+const ICS_COLOURS = { blue: "royalblue", orange: "darkorange", aqua: "mediumseagreen", yellow: "goldenrod", magenta: "palevioletred", green: "green", violet: "slateblue" };
 
 function calendarFile(mods) {
   const text = s => String(s).replace(/[\\;,]/g, ch => "\\" + ch).replace(/\r?\n/g, "\\n");
@@ -3058,6 +3155,7 @@ function calendarFile(mods) {
         `DTEND;VALUE=DATE:${nextDay(d.date)}`,
         fold(`SUMMARY:${text(`${code || title}: ${d.label}`)}`),
         fold(`DESCRIPTION:${text(about)}`),
+        `COLOR:${ICS_COLOURS[m.color] || "steelblue"}`,
         "TRANSP:TRANSPARENT",
         "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15H", fold(`DESCRIPTION:${text(`Tomorrow: ${code || title} ${d.label}`)}`), "END:VALARM",
         "END:VEVENT");
@@ -3302,12 +3400,96 @@ window.addEventListener("resize", () => {
   drawChart.t = setTimeout(() => { const m = currentModule(); if (m) drawChart(m, Number(m.target) || 0); }, 150);
 });
 
+// ---------- Motion: numbers count up, bars grow and rows arrive one after another ----------
+// Only when a screen is arrived at (not while you work on it), and not at all with "reduce motion".
+
+function countUp(el, to, decimals = 1) {
+  if (!el || reduceMotion() || !(to > 0)) return;
+  const finalText = el.textContent;
+  const tok = String(Math.random());
+  el.dataset.countTok = tok;
+  const start = performance.now(), dur = 650;
+  const frame = now => {
+    if (el.dataset.countTok !== tok) return;
+    const t = clamp((now - start) / dur, 0, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = t < 1 ? fmt(to * eased, decimals) + "%" : finalText;
+    if (t < 1) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+// Bars start empty and grow to their value
+function growBars(bars, firstDelay = 120) {
+  if (reduceMotion()) return;
+  bars.forEach((bar, i) => {
+    const target = bar.style.transform;
+    bar.style.transition = "none";
+    bar.style.transform = "scaleX(0)";
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      bar.style.transition = "";
+      bar.style.transitionDelay = firstDelay + Math.min(i, 10) * 40 + "ms";
+      bar.style.transform = target;
+      setTimeout(() => (bar.style.transitionDelay = ""), 1200);
+    }));
+  });
+}
+
+// My modules: the cards and rows arrive 40ms apart, the bars grow and the numbers count up
+function introduce(el) {
+  if (reduceMotion()) return;
+  [...el.querySelectorAll(".next-up, .summary-row, .empty, #moduleList > li")].slice(0, 12).forEach((it, i) => {
+    it.style.animationDelay = i * 40 + "ms";
+    it.classList.add("arrive");
+  });
+  growBars([...el.querySelectorAll(".bar6 > i, .f-bar > i")]);
+  el.querySelectorAll("[data-count]").forEach(n => countUp(n, parseFloat(n.dataset.count)));
+}
+
+// A module's page: the final mark and what's needed count up, the bar grows
+function introduceModule() {
+  if (reduceMotion()) return;
+  countUp($("hero"), parseFloat($("hero").textContent));
+  const need = $("needBig");
+  if (/%$/.test(need.textContent)) countUp(need, parseFloat(need.textContent), 0);
+  growBars([$("barNow")], 80);
+}
+
+// "Goal reached": a short moment when a mark you save makes the goal banked
+function celebrate(p) {
+  const fin = p.finalRow;
+  const sub = fin && !hasMark(fin) && Number(fin.a.subMin) > 0 ? Number(fin.a.subMin) : 0;
+  const text = p.need === null ? `You finished on ${r1(p.finalSoFar)}%.`
+    : sub ? `${fmt(p.goal)}% is banked. Just get the ${fmt(sub)}% sub-minimum in ${fin.a.name || "the final test"}.`
+    : `${fmt(p.goal)}% is banked, whatever happens in the rest.`;
+  const box = document.createElement("div");
+  box.className = "celebrate";
+  box.setAttribute("role", "status");
+  box.innerHTML = `<div class="blueprint cele">${CORNERS}<span class="cele-tick">${ic("check", 30)}</span><div class="h24">Goal reached</div><div class="meta13">${esc(text)}</div></div>`;
+  document.body.appendChild(box);
+  try { navigator.vibrate && navigator.vibrate([10, 60, 20]); } catch (e) { /* ignore */ }
+  const card = box.firstElementChild, r = reduceMotion();
+  card.animate(r ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: "scale(0.9)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: EASE_OUT });
+  card.querySelector(".cele-tick").animate(r ? [{ opacity: 1 }, { opacity: 1 }] : [{ transform: "scale(0.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 360, delay: 120, easing: EASE_OUT, fill: "backwards" });
+  let gone = false;
+  const close = () => {
+    if (gone) return;
+    gone = true;
+    card.animate([{ opacity: 1 }, { opacity: 0, transform: r ? "none" : "scale(0.97)" }], { duration: 180, easing: "ease-out", fill: "forwards" }).onfinish = () => box.remove();
+  };
+  box.addEventListener("click", close);
+  setTimeout(close, 2200);
+}
+
 // ---------- Start ----------
 // The intro the first time; after that, the clean list with every folder closed
 
 state.selectedId = null;
 state.folders.forEach(f => (f.collapsed = true));
 if (state.modules.length) state.onboarded = true;
+ensureColours();
+saveState();
 ui.screen = state.onboarded ? "modules" : "onboarding";
+ui.anim = "fade";
 render();
 openSharedFromAddress();
