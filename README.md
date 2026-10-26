@@ -45,7 +45,7 @@ On iPhone the installed app keeps its own copy of your data, separate from Safar
 | File | What it does |
 |------|--------------|
 | `index.html` | The page layout |
-| `style.css` | The look of the site (the "Industry" design: colours, fonts, light and dark mode) |
+| `style.css` | The look of the site (Liquid Glass: frosted glass, rounded shapes, the system font, light and dark mode; it also follows the phone's Reduce Transparency and Increase Contrast settings) |
 | `app.js` | Reads the frameworks, does the calculations, saves the marks |
 | `manifest.webmanifest` | Makes the site installable as a phone app (name, icon, colours) |
 | `sw.js` | Lets the app open without internet |

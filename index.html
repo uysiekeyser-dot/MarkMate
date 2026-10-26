@@ -6,7 +6,7 @@
   <title>Mark Calculator</title>
   <!-- Installable as a phone app -->
   <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#f2f2f3">
+  <meta name="theme-color" content="#eef1f7">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="mobile-web-app-capable" content="yes">
@@ -15,12 +15,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Light or dark, as chosen in the menu (before the page draws, so it doesn't flash) -->
   <script>try { var t = localStorage.getItem("markCalc.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
-  <!-- Fonts: Barlow and Barlow Condensed -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600&display=swap">
+  <!-- Font: the phone's own system font (San Francisco on iPhone), so there is nothing to download -->
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=15">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -114,6 +111,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>

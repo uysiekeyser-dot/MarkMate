@@ -822,3 +822,265 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
   .arrive { animation-name: mm-fade; }
   .f-bar > i { transition: none; }
 }
+
+
+/* ============================================================================================
+   Liquid Glass. Frosted, translucent surfaces over a soft colour glow; rounded corners and
+   capsule buttons; the system font (San Francisco on iPhone). Floating parts (header, tab bar,
+   menus, sheets, dialogs) blur what's behind them; content cards are translucent without blur,
+   which keeps scrolling smooth. Everything above still sets the layout; this sets the look.
+   ============================================================================================ */
+:root {
+  --font-heading: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-round: ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --color-bg: #eef1f7;
+  --color-surface: rgba(255, 255, 255, 0.62);
+  --color-text: #12151c;
+  --color-divider: color-mix(in srgb, var(--color-text) 11%, transparent);
+  --color-hair: color-mix(in srgb, var(--color-text) 7%, transparent);
+  --color-accent: #2f74e0;
+  --color-accent-100: #eaf2ff; --color-accent-200: #d4e4fd; --color-accent-300: #a8c8f7; --color-accent-400: #79a8ef;
+  --color-accent-500: #4d8ae7; --color-accent-600: #2566cc; --color-accent-700: #1f5fc2; --color-accent-800: #184a96; --color-accent-900: #12305e;
+  --on-accent: #ffffff;
+  --glass: rgba(255, 255, 255, 0.6);
+  --glass-strong: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-blur: blur(24px) saturate(180%);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 0.5px rgba(18, 21, 28, 0.06), 0 8px 28px rgba(30, 50, 110, 0.12);
+  --solid-card: #ffffff;
+  --glow-1: rgba(108, 160, 255, 0.5); --glow-2: rgba(168, 128, 255, 0.36); --glow-3: rgba(90, 210, 220, 0.26);
+  --panel-bg: linear-gradient(160deg, #2a58b8, #3a2f9a);
+  --panel-fg: #ffffff;
+  --panel-line: rgba(255, 255, 255, 0.28);
+  --panel-muted: #c9dcff;
+  --panel-soft: #e3ecff;
+  --panel-rule: rgba(255, 255, 255, 0.2);
+  --backdrop: rgba(14, 20, 40, 0.32);
+  --r-card: 22px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0b0d14;
+    --color-surface: rgba(255, 255, 255, 0.07);
+    --color-text: #eef0f6;
+    --color-accent: #4c93f5;
+    --color-accent-100: #142238; --color-accent-200: #1a2f4f; --color-accent-300: #24436f; --color-accent-400: #2f5e9c;
+    --color-accent-500: #3f7bd0; --color-accent-600: #6aa5f6; --color-accent-700: #8dbaf8; --color-accent-800: #b6d3fb; --color-accent-900: #0b1626;
+    --on-accent: #ffffff;
+    --glass: rgba(34, 38, 52, 0.58);
+    --glass-strong: rgba(30, 34, 46, 0.78);
+    --glass-edge: rgba(255, 255, 255, 0.13);
+    --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.45);
+    --solid-card: #1a1d27;
+    --glow-1: rgba(58, 108, 255, 0.34); --glow-2: rgba(132, 84, 255, 0.26); --glow-3: rgba(30, 160, 190, 0.18);
+    --panel-bg: linear-gradient(160deg, rgba(40, 72, 150, 0.85), rgba(46, 36, 120, 0.85));
+    --panel-line: rgba(255, 255, 255, 0.18);
+    --backdrop: rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme="dark"] {
+  --color-bg: #0b0d14;
+  --color-surface: rgba(255, 255, 255, 0.07);
+  --color-text: #eef0f6;
+  --color-accent: #4c93f5;
+  --color-accent-100: #142238; --color-accent-200: #1a2f4f; --color-accent-300: #24436f; --color-accent-400: #2f5e9c;
+  --color-accent-500: #3f7bd0; --color-accent-600: #6aa5f6; --color-accent-700: #8dbaf8; --color-accent-800: #b6d3fb; --color-accent-900: #0b1626;
+  --on-accent: #ffffff;
+  --glass: rgba(34, 38, 52, 0.58);
+  --glass-strong: rgba(30, 34, 46, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.13);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.45);
+  --solid-card: #1a1d27;
+  --glow-1: rgba(58, 108, 255, 0.34); --glow-2: rgba(132, 84, 255, 0.26); --glow-3: rgba(30, 160, 190, 0.18);
+  --panel-bg: linear-gradient(160deg, rgba(40, 72, 150, 0.85), rgba(46, 36, 120, 0.85));
+  --panel-line: rgba(255, 255, 255, 0.18);
+  --backdrop: rgba(0, 0, 0, 0.5);
+}
+
+/* The soft colour glow behind the glass (still; nothing moves in the background) */
+body::before {
+  content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42vmax 42vmax at 12% 8%, var(--glow-1), transparent 70%),
+    radial-gradient(46vmax 46vmax at 92% 38%, var(--glow-2), transparent 70%),
+    radial-gradient(40vmax 40vmax at 28% 96%, var(--glow-3), transparent 70%);
+}
+@media (min-width: 640px) { .app { border-color: transparent; } }
+
+/* ---------- Type ---------- */
+.h-screen { font-weight: 700; letter-spacing: -0.025em; }
+.h34, .h32 { letter-spacing: -0.022em; }
+.h24, .h22 { font-weight: 700; letter-spacing: -0.015em; }
+.hero96, .hero80, .hero76, .hero64, .num26, .m-final, .cond20 { font-family: var(--font-round); font-weight: 700; letter-spacing: -0.02em; }
+.cond17, .cond16, .cond15 { font-family: var(--font-round); }
+.eyebrow { letter-spacing: 0.06em; }
+.m-name { font: 600 19px/1.15 var(--font-heading); letter-spacing: -0.012em; }
+.nu-what { font-weight: 700; letter-spacing: -0.025em; font-size: 36px; }
+.folder-name { font: 600 15px var(--font-body); letter-spacing: -0.005em; text-transform: none; }
+
+/* ---------- Glass surfaces ---------- */
+.blueprint > .corner { display: none; }
+.blueprint, .folder, #moduleList > .mod-item, .assess, .dates-sec, .chart-sec, .date-group, .rv-table, .rules {
+  background: var(--glass); border: 0.5px solid var(--glass-edge); border-radius: var(--r-card); box-shadow: var(--glass-shadow);
+}
+.stats2, .read-lines, .ob-fig { overflow: hidden; }
+.assess { padding: 14px 16px 10px; }
+.dates-sec, .chart-sec, .rules { padding: 16px; }
+.date-group { padding: 4px 16px; }
+.date-group .group-label { padding-top: 12px; }
+.date-row:last-child, .rv-table > :last-child { border-bottom: 0; }
+.rv-table { padding: 0 16px; }
+.rule { border-left-color: var(--color-divider); }
+
+/* Floating parts: real blur of what's behind them */
+.tabbar, .menu, .sheet, .dlg, .blue-dialog, .cele, .rv-footer, .chart-tip, .toast, .screen-head, .top-row {
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+.menu, .sheet, .dlg, .blue-dialog, .cele, .chart-tip { background: var(--glass-strong); border: 0.5px solid var(--glass-edge); box-shadow: var(--glass-shadow), var(--shadow-lg); }
+.menu { border-radius: 18px; padding: 6px; }
+.menu-item { border-radius: 12px; }
+.sheet { border-radius: 28px 28px 0 0; border-bottom: 0; }
+.dlg { border-radius: 26px; }
+.blue-dialog { border-radius: 24px; }
+.cele { border-radius: 26px; }
+.chart-tip { border-radius: 12px; }
+.backdrop, .dlg-back { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+
+/* Sticky glass header: content scrolls under it and fades at its edge instead of a hard line */
+.screen-head, .top-row {
+  position: sticky; top: 0; z-index: 4;
+  margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter));
+  padding: 8px var(--gutter); padding-top: max(8px, env(safe-area-inset-top));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 72%, transparent) 70%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, #000 78%, transparent);
+}
+
+/* ---------- The floating tab bar ---------- */
+.tabbar {
+  bottom: calc(14px + env(safe-area-inset-bottom)); width: min(330px, calc(100% - 40px)); height: 60px; min-height: 0;
+  padding: 5px; gap: 4px; border-radius: 999px;
+  background: var(--glass-strong); border: 0.5px solid var(--glass-edge); box-shadow: var(--glass-shadow), 0 12px 30px rgba(20, 30, 70, 0.18);
+}
+@media (min-width: 640px) { .tabbar { border-left: 0.5px solid var(--glass-edge); border-right: 0.5px solid var(--glass-edge); } }
+.tab { justify-content: center; border-radius: 999px; font: 600 15px var(--font-body); letter-spacing: 0; transition: background-color 200ms ease, color 200ms ease; }
+.tab i { display: none; }
+.tab.on { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent-700); }
+.screen.with-tabs { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
+
+/* Check the weights: the Save bar floats too */
+.rv-footer {
+  bottom: calc(10px + env(safe-area-inset-bottom)); width: calc(100% - 20px); max-width: 540px; padding: 12px;
+  border-radius: 28px; background: var(--glass-strong); border: 0.5px solid var(--glass-edge); box-shadow: var(--glass-shadow), 0 12px 30px rgba(20, 30, 70, 0.16);
+}
+
+/* ---------- Buttons: capsules and circles ---------- */
+.btn-solid, .btn-line, .btn-bad, .btn-solid-sm, .btn-line-sm { border-radius: 999px; }
+.btn-solid, .btn-solid-sm, .sq-btn.solid {
+  background: linear-gradient(180deg, var(--color-accent-500), var(--color-accent));
+  border: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.btn-solid.off { background: var(--color-neutral-300); box-shadow: none; }
+.btn-line, .btn-line-sm, .sq-btn.line { background: var(--glass); border: 0.5px solid var(--glass-edge); box-shadow: var(--glass-shadow); }
+.sq-btn, .sq-icon, .tool, .x, .mc-btn { border-radius: 50%; }
+.sq-btn.line[aria-expanded="true"] { background: var(--color-accent-100); }
+.back { border-radius: 999px; }
+
+/* Segmented controls: a glass track with a raised pill */
+.seg2, .theme-seg { padding: 4px; gap: 4px; border-radius: 999px; background: var(--glass); border: 0.5px solid var(--glass-edge); box-shadow: var(--glass-shadow); }
+.seg2 button, .theme-seg button { border: 0 !important; border-radius: 999px; }
+.seg2 button { height: 40px; }
+.seg2 button.on, .theme-seg button.on { background: var(--solid-card); color: var(--color-text); box-shadow: 0 2px 8px rgba(20, 30, 70, 0.14); }
+.goal-seg { border-radius: 999px; padding: 3px; gap: 2px; overflow: hidden; }
+.goal-seg > * { border-radius: 999px; border: 0 !important; }
+.goal-seg > .on { background: rgba(255, 255, 255, 0.92); color: #1b2a55; }
+.goal-seg input.on::placeholder { color: #1b2a55; }
+
+/* ---------- Fields, chips and tags ---------- */
+.box-input, .num-box, .ghost-input, .chip-select { border-radius: 12px; }
+.box-input, .num-box { border: 0.5px solid var(--color-divider); }
+.paste { border-radius: 18px; }
+.chip, .date-tag, .tag-final, .menu-tag, .tag-select span { border-radius: 999px; }
+.date-box { border-radius: 14px; border: 0.5px solid var(--color-divider); }
+.qr-box, .ob-sheet { border-radius: 16px; }
+.mc { border-radius: 50%; }
+.switch { width: 46px; height: 28px; border-radius: 999px; border: 0; background: var(--color-neutral-300); }
+.switch i { top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); }
+.switch.on { background: #34c759; }
+.switch.on i { transform: translateX(18px); background: #fff; }
+.cele-tick { border-radius: 50%; }
+.handle { border-radius: 999px; width: 40px; height: 5px; }
+
+/* ---------- Bars: rounded ---------- */
+.bar6, .bar10, .ob-w .track { border-radius: 999px; }
+.bar6 > i, .bar10.layered > i, .f-bar > i, .ob-w .track i, .segs i, .ob-dots i { border-radius: 999px; }
+.segs { gap: 3px; }
+
+/* ---------- Cards on My modules ---------- */
+.next-up { padding: 20px; }
+#moduleList { gap: 14px; }
+#moduleList > .list-label + .mod-item, #moduleList > .mod-item + .mod-item { margin-top: 0; }
+.list-label { border-bottom: 0; padding: 4px 6px 0; margin-bottom: -6px; }
+.folder { padding: 0 16px; }
+.folder-head { height: 54px; }
+.folder.collapsed .folder-head { border-bottom-color: transparent; }
+#moduleList > .mod-item { padding: 0 16px; }
+#moduleList > .mod-item > .mod-row, .mod-list.inner > .mod-item:last-child > .mod-row { border-bottom: 0; }
+.mod-item.risk .mod-row { box-shadow: inset 3px 0 0 var(--bad); padding-left: 12px; }
+.mod-item.example .mod-row { border-bottom: 0; }
+.folder.drop-target .folder-head { background: transparent; }
+.folder.drop-target { box-shadow: 0 0 0 2px var(--color-accent), var(--glass-shadow); }
+.dragging { border-radius: var(--r-card); }
+
+/* ---------- Module page ---------- */
+.goal-panel { border-radius: var(--r-card); background: var(--panel-bg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 12px 30px rgba(40, 50, 140, 0.25); }
+.ma-row { border-radius: 10px; }
+
+/* ---------- Toast: a dark glass capsule ---------- */
+.toast { border-radius: 999px; padding: 12px 20px; background: rgba(22, 26, 36, 0.86); color: #fff; text-align: center; }
+
+/* ---------- Accessibility: less transparency, more contrast ---------- */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass: var(--solid-card); --glass-strong: var(--solid-card); }
+  body::before { display: none; }
+  .tabbar, .menu, .sheet, .dlg, .blue-dialog, .cele, .rv-footer, .chart-tip, .toast, .screen-head, .top-row, .backdrop, .dlg-back {
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .screen-head, .top-row { background: var(--color-bg); -webkit-mask-image: none; mask-image: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --glass: var(--solid-card); --glass-strong: var(--solid-card); --glass-edge: var(--color-text); }
+}
+
+/* The header blurs without boosting colour, so it doesn't show as a box over the glow */
+.screen-head, .top-row { -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+/* Folder average: a small rounded bar inside the card, under the heading */
+.folder-head { height: 62px; padding-bottom: 8px; }
+.folder .f-bar { left: 26px; right: 30px; bottom: 10px; height: 4px; border-radius: 999px; background: var(--color-neutral-200); }
+.folder .f-bar > b { top: -3px; bottom: -3px; border-radius: 1px; }
+/* Rows are clear on the glass (they only get a background while being dragged) */
+.mod-item, .folder { background-clip: padding-box; }
+.mod-item { background: transparent; }
+.mod-item.dragging { background: var(--glass-strong); border-radius: 16px; }
+/* An open folder shows its tools, so its count steps aside to keep the name readable */
+.folder:not(.collapsed) .fc-n { display: none; }
+/* A little more solid, so text scrolling underneath doesn't show through */
+.screen-head, .top-row { background: linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 88%, transparent) 65%, transparent); }
+.goal-seg input { width: 66px; }
+/* The glow is exactly screen-sized (an oversized layer can show tile edges and costs more to draw) */
+body::before {
+  inset: 0;
+  background:
+    radial-gradient(70vmax 70vmax at 5% 0%, var(--glow-1), transparent 60%),
+    radial-gradient(75vmax 75vmax at 100% 45%, var(--glow-2), transparent 60%),
+    radial-gradient(65vmax 65vmax at 20% 100%, var(--glow-3), transparent 60%);
+}
+/* Like iOS: the header is clear at rest and frosts only once content scrolls under it */
+body:not(.scrolled) .screen-head, body:not(.scrolled) .top-row {
+  background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.screen-head, .top-row { transition: background-color 200ms ease; }
+body:not(.scrolled) .screen-head, body:not(.scrolled) .top-row { -webkit-mask-image: none; mask-image: none; }
+.screen-head, .top-row { padding-bottom: 16px; margin-bottom: -8px; }
+.group-name, .g-name { text-transform: none; letter-spacing: -0.01em; font-weight: 700; }

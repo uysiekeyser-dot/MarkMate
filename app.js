@@ -1329,6 +1329,7 @@ function go(screen, extra = {}) {
   Object.assign(ui, { screen, editing: null }, extra);
   render();
   window.scrollTo(0, 0);
+  document.body.classList.remove("scrolled");
 }
 
 function render() {
@@ -1587,8 +1588,8 @@ function folderHtml(f) {
           <button class="tool" data-act="folder-rename" aria-label="Rename folder">${ic("pencil", 16)}</button>
           <button class="tool del" data-act="folder-delete" aria-label="Delete folder">${ic("trash", 16)}</button>
         </span>
-        <span class="folder-count">${mods.length} module${mods.length === 1 ? "" : "s"}${a.value == null ? "" :
-          ` · <b title="${a.weighted ? "Average on work done, weighted by credits" : "Average on work done"}">${r1(a.value)}%</b>`}</span>
+        <span class="folder-count"><span class="fc-n">${mods.length} module${mods.length === 1 ? "" : "s"}</span>${a.value == null ? "" :
+          `<span class="fc-n"> · </span><b title="${a.weighted ? "Average on work done, weighted by credits" : "Average on work done"}">${r1(a.value)}%</b>`}</span>
         <span class="sort-handle" aria-label="Drag to reorder">${ic("grip", 16)}</span>
         ${a.value == null ? "" : `<span class="f-bar" aria-hidden="true"><i class="${a.value >= goal ? "done" : ""}" style="transform:scaleX(${clamp(a.value, 0, 100) / 100})"></i><b style="left:${clamp(goal, 0, 100)}%"></b></span>`}
       </div>
@@ -2936,6 +2937,9 @@ document.addEventListener("click", e => { if (!menu.hidden && !e.target.closest(
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
 window.addEventListener("resize", () => { if (!menu.hidden) placeMenu(); });
 window.addEventListener("scroll", closeMenu, { passive: true });
+// The glass header frosts only once something has scrolled under it
+const markScrolled = () => document.body.classList.toggle("scrolled", window.scrollY > 4);
+window.addEventListener("scroll", markScrolled, { passive: true });
 menu.querySelectorAll(".menu-item").forEach(item => item.addEventListener("click", () => closeMenu()));
 
 // Shows whether the AI reader is on, in the menu
@@ -3019,7 +3023,7 @@ function applyTheme(choice) {
     b.setAttribute("aria-checked", String(active));
   });
   const dark = choice === "dark" || (choice !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelector('meta[name="theme-color"]').content = dark ? "#141517" : "#f2f2f3";
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#0b0d14" : "#eef1f7";
 }
 let themeChoice = "auto";
 try { themeChoice = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* ignore */ }
