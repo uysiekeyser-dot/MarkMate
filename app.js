@@ -1218,7 +1218,7 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "21";
+const APP_VERSION = "22";
 const APP_UPDATED = "26 Oct 2026";
 
 const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
@@ -1286,6 +1286,9 @@ function renderSettings() {
   });
   document.querySelectorAll('[data-act="set-accent"]').forEach(b => { const on = b.dataset.v === s.accent; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
   document.querySelectorAll('[data-act="set-glass"]').forEach(b => b.classList.toggle("on", b.dataset.v === s.glass));
+  const d = daysSince(state.lastBackup);
+  $("setBackup").textContent = d === null ? "Never backed up" : `Last: ${agoText(d)}`;
+  $("setPersist").textContent = runningAsApp() || ui.persisted ? "Yes" : "Not guaranteed";
   $("setVersion").textContent = `${APP_VERSION} · ${APP_UPDATED}`;
   renderAiState();
   showStorage();
@@ -1653,7 +1656,8 @@ function renderModules(el) {
       <span><b data-count="${avg.value ?? ""}">${avg.value == null ? "–" : r1(avg.value) + "%"}</b> ${avg.weighted ? `average · by ${fmt(avg.credits)} credits` : "average on work done"}</span>
       <span><b>${onTrack} of ${mods.length}</b> on track</span>
     </div>
-    ${avgNote ? `<div class="meta12 summary-note">${avgNote}</div>` : ""}` : `
+    ${avgNote ? `<div class="meta12 summary-note">${avgNote}</div>` : ""}
+    ${backupNudgeHtml()}` : `
     <div class="blueprint empty">${CORNERS}
       <div class="eyebrow">No modules yet</div>
       <p>Upload a module framework and the calculator finds every test and assignment with its weight. Your modules will look like this:</p>
@@ -2127,6 +2131,7 @@ async function nextJob() {
       sourceText: text.slice(0, SOURCE_TEXT_LIMIT), // kept so the AI can read it again later
     };
     findSubMinimums(mod);
+    findAdmission(mod);
     job.pdf = pdf;
     job.draft = { mode: "new", mod };
     job.lines = photo ? photoLines(mod) : textLines(text);
@@ -2322,6 +2327,8 @@ function renderReview(el) {
     </div>
     <label class="field-row credits-row"><span class="meta14">Credits <span class="meta12">(for weighted averages)</span></span>
       <span class="num-box w80"><input type="number" inputmode="decimal" step="any" min="0" data-in="rv-credits" value="${esc(mod.credits || "")}" placeholder="e.g. 16" aria-label="Credits"></span></label>
+    <label class="field-row credits-row"><span class="meta14">Exam admission <span class="meta12">(class mark of at least)</span></span>
+      <span class="num-box w80"><input type="number" inputmode="decimal" step="any" min="0" max="100" data-in="rv-admission" value="${esc(mod.admission || "")}" placeholder="none" aria-label="Class mark needed for exam admission"><span>%</span></span></label>
     <div class="field-row colour-row"><span class="meta14">Colour</span>
       <span class="colour-pick">${MODULE_COLOURS.map(c => `<button class="mc-btn${mod.color === c ? " on" : ""}" data-act="rv-colour" data-c="${c}" aria-label="${c}" aria-pressed="${mod.color === c}"><i class="mc mc-${c}"></i></button>`).join("")}</span></div>
     <div class="rv-sum">
@@ -2479,7 +2486,7 @@ async function saveDraft() {
   m.groups = m.groups.filter(g => m.assessments.some(a => a.groupId === g.id));
   if (d.mode === "edit") {
     const mod = state.modules.find(x => x.id === m.id);
-    if (mod) Object.assign(mod, { name: m.name, credits: m.credits, color: m.color, groups: m.groups, assessments: m.assessments });
+    if (mod) Object.assign(mod, { name: m.name, credits: m.credits, color: m.color, admission: m.admission, groups: m.groups, assessments: m.assessments });
     ui.draft = null;
     saveState();
     go("module");
@@ -2557,6 +2564,13 @@ function renderModulePage(el) {
       </div>
       <div class="cell"><div class="eyebrow">Average on work done</div><div id="statAvg" class="num26"></div></div>
       <div class="cell"><div class="eyebrow">Weight completed</div><div id="statDone" class="num26"></div></div>
+    </div>
+
+    <div id="admitCard" class="admit-card" hidden>
+      <div id="admitHead" class="row-between"><span class="eyebrow">Exam admission</span><span id="admitBadge" class="admit-badge"></span></div>
+      <div id="admitText" class="fs14 lh135"></div>
+      <div id="admitBarWrap" class="bar6"><i id="admitBar"></i><b id="admitGoal"></b></div>
+      <div id="a3Text" class="fs14 lh135 a3"></div>
     </div>
 
     <div class="goal-panel">
@@ -2675,6 +2689,7 @@ function paintModule() {
     : subPend.length ? `${subPend.map(r => `${r.a.name} has a ${fmt(r.a.subMin)}% sub-minimum`).join("; ")}, so you need at least that there whatever your other marks.` : "";
   $("subNote").hidden = !subNote;
   $("subNote").textContent = subNote;
+  paintAdmission(mod, p);
 
   // Rows
   for (const r of p.rows) {
@@ -2808,6 +2823,7 @@ async function rereadWithAi() {
       dates: parsed.dates && parsed.dates.length ? parsed.dates : mod.dates || [],
       aiInput: readBy === "ai" ? parsed.input : undefined });
     findSubMinimums(mod);
+    findAdmission(mod);
     saveState();
     showToast("Read again. Check the weights.", 4000);
     if (ui.screen === "module") renderModulePage($("scrModule"));
@@ -3161,6 +3177,10 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
 // ---------- Backup / restore (marks are stored per browser, so this moves them between devices) ----------
 
 $("exportBtn").addEventListener("click", () => {
+  state.lastBackup = new Date().toISOString();
+  saveState();
+  askToKeepData();
+  if (ui.screen === "settings") renderSettings();
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -3309,7 +3329,7 @@ const streamBytes = async (bytes, stream) => new Uint8Array(await new Response(n
 async function shareLink(mod) {
   const gi = id => mod.groups.findIndex(g => g.id === id);
   const data = {
-    v: 1, n: mod.name, c: Number(mod.credits) || 0, t: Number(mod.target) || 50,
+    v: 1, n: mod.name, c: Number(mod.credits) || 0, t: Number(mod.target) || 50, x: Number(mod.admission) || 0,
     g: mod.groups.map(g => [g.name, Number(g.weight) || 0]),
     a: mod.assessments.map(a => [a.name, Number(a.weight) || 0, a.groupId ? gi(a.groupId) : -1, a.isFinal ? 1 : 0, Number(a.subMin) || 0]),
     r: mod.rules || [],
@@ -3334,7 +3354,7 @@ async function readShared(payload) {
   const groups = (data.g || []).map(([name, weight]) => ({ id: uid(), name: String(name), weight: Number(weight) || 0 }));
   return {
     id: uid(), name: String(data.n || "Shared module"), fileName: "", shared: true,
-    credits: Number(data.c) > 0 ? Number(data.c) : undefined, target: Number(data.t) || settings().defaultGoal,
+    credits: Number(data.c) > 0 ? Number(data.c) : undefined, admission: Number(data.x) > 0 ? Number(data.x) : undefined, target: Number(data.t) || settings().defaultGoal,
     folderId: state.uploadFolderId || null, groups,
     assessments: data.a.map(([name, weight, g, fin, sub]) => ({
       id: uid(), name: String(name), weight: Number(weight) || 0, mark: "", isFinal: !!fin,
@@ -3585,6 +3605,153 @@ function celebrate(p) {
   setTimeout(close, 2200);
 }
 
+// ---------- Exam admission ----------
+// Many modules need a minimum class mark before you may write the exam (e.g. "a class mark of at
+// least 40% for admission"). The class mark is a group named like "Class mark" when the module has
+// one, otherwise everything except the final test.
+
+const CLASS_GROUP = /\b(class|klas|semester|year|jaar)\b|klaspunt|predikaat|jaarpunt/i;
+const SECOND_CHANCE = /\bA3\b|second opportunity|tweede geleentheid|supplementar|re-?exam|herexam/i;
+
+function classMark(mod) {
+  const c = calculate(mod);
+  const g = mod.groups.find(x => CLASS_GROUP.test(x.name || ""));
+  const rows = g ? c.rows.filter(r => r.a.groupId === g.id) : c.rows.filter(r => r !== c.finalRow);
+  const w = r => (g ? Number(r.a.weight) || 0 : r.weight); // weights inside the class mark
+  const total = rows.reduce((s, r) => s + w(r), 0);
+  if (!(total > 0)) return null;
+  const marked = rows.filter(hasMark);
+  const doneW = marked.reduce((s, r) => s + w(r), 0);
+  const earned = marked.reduce((s, r) => s + (r.pct * w(r)) / 100, 0);
+  const rem = total - doneW;
+  const needed = Number(mod.admission) || 0;
+  return {
+    avg: doneW > 0 ? (earned / doneW) * 100 : null,
+    done: rem <= 1e-6,
+    value: (earned / total) * 100, // the class mark if everything still to come scored 0
+    need: rem > 1e-6 ? ((needed / 100) * total - earned) / rem * 100 : null,
+    needed,
+    name: g ? (/^[A-Z][a-z]/.test(g.name) ? g.name.charAt(0).toLowerCase() + g.name.slice(1) : g.name) : "class mark",
+  };
+}
+
+// "A class mark of at least 40% is needed for admission to the exam" → 40
+function findAdmission(mod) {
+  if (Number(mod.admission) > 0) return;
+  for (const rule of mod.rules || []) {
+    if (!/admission|admitted|toelating|toegelaat|toegang|entry|access to the exam|allowed to write|qualify|eligible|deelnamebewys/i.test(rule)) continue;
+    const m = rule.match(/(\d{2}(?:[.,]\d+)?)\s*%/);
+    const pct = m && parseFloat(m[1].replace(",", "."));
+    if (pct >= 20 && pct <= 75) { mod.admission = pct; return; }
+  }
+}
+
+// Does the framework offer a second chance (A3, supplementary exam)?
+const hasSecondChance = mod =>
+  [...(mod.rules || []), ...(mod.notes || []), ...(mod.dates || []).map(d => d.label || "")].some(t => SECOND_CHANCE.test(t));
+
+// The admission card on a module's page, and what you'd need in A3 if A2 went wrong
+function paintAdmission(mod, p) {
+  const card = $("admitCard");
+  if (!card) return;
+  const lines = [];
+  let badge = "", tone = "", show = false;
+  const cm = Number(mod.admission) > 0 ? classMark(mod) : null;
+  if (cm) {
+    show = true;
+    const n = fmt(cm.needed);
+    if (cm.done) {
+      const ok = cm.value >= cm.needed;
+      badge = ok ? "Admitted" : "Not admitted"; tone = ok ? "good" : "bad";
+      lines.push(`Your ${cm.name} is ${r1(cm.value)}%; you need at least ${n}% to write the exam.`);
+    } else if (cm.need <= 0) {
+      badge = "Admitted"; tone = "good";
+      lines.push(`You already have enough for the ${n}% needed to write the exam, whatever your other class marks.`);
+    } else if (cm.need > 100) {
+      badge = "Out of reach"; tone = "bad";
+      lines.push(`Even full marks on the rest of your class work won't reach the ${n}% needed to write the exam. Talk to your lecturer.`);
+    } else {
+      const need = Math.ceil(cm.need);
+      badge = `Need ${need}%`; tone = need > settings().risk ? "bad" : "";
+      lines.push(`${cm.avg == null ? "No class marks yet." : `Your ${cm.name} on work done is ${r1(cm.avg)}%.`} You need an average of ${need}% on the rest of your class work to reach the ${n}% needed to write the exam.`);
+    }
+    $("admitBar").style.transform = `scaleX(${clamp(cm.done ? cm.value : cm.avg ?? 0, 0, 100) / 100})`;
+    $("admitBar").className = tone === "good" ? "done" : "";
+    $("admitGoal").style.left = clamp(cm.needed, 0, 100) + "%";
+  }
+  $("admitBarWrap").hidden = !cm;
+  $("admitHead").hidden = !cm;
+
+  // A2 written and the goal (or its sub-minimum) missed: what would be needed in A3, which replaces it
+  const fin = p.finalRow;
+  let a3 = "";
+  if (fin && hasMark(fin) && hasSecondChance(mod)) {
+    const sub = Number(fin.a.subMin) || 0;
+    const failed = p.finalSoFar < p.goal || (sub && fin.pct < sub);
+    if (failed && fin.weight > 0) {
+      const others = p.earned - (fin.pct * fin.weight) / 100;
+      const needA3 = Math.max(((p.goal / p.scale - others) / fin.weight) * 100, sub);
+      a3 = needA3 > 100
+        ? `If you write A3 (it replaces ${shortLabel(fin.a.name || "A2")}), even 100% would give ${r1((others + fin.weight) * p.scale)}%.`
+        : `If you write A3 (it replaces ${shortLabel(fin.a.name || "A2")}), you'd need ${Math.ceil(needA3)}% in it to finish on ${fmt(p.goal)}%.`;
+      show = true;
+    }
+  }
+  $("admitText").textContent = lines.join(" ");
+  $("admitText").hidden = !lines.length;
+  $("a3Text").textContent = a3;
+  $("a3Text").hidden = !a3;
+  const b = $("admitBadge");
+  b.textContent = badge;
+  b.className = "admit-badge " + tone;
+  b.hidden = !badge;
+  card.hidden = !show;
+}
+
+INPUTS["rv-admission"] = t => {
+  const v = parseFloat(String(t.value).replace(",", "."));
+  ui.draft.mod.admission = v > 0 && v <= 100 ? v : undefined;
+};
+
+// ---------- Keeping marks safe ----------
+// Marks live only on this device. The app asks the browser to keep its data, remembers when the
+// last Backup was made, and now and then suggests one. (Safari on iPhone can clear a website's data
+// after about 7 days without a visit; apps added to the Home Screen aren't affected.)
+
+async function askToKeepData() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      ui.persisted = (await navigator.storage.persisted()) || (await navigator.storage.persist());
+    }
+  } catch (e) { /* not available */ }
+}
+const daysSince = iso => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 864e5)) : null);
+const agoText = d => (d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`);
+
+function backupNudgeHtml() {
+  const mods = state.modules;
+  if (!mods.some(m => m.assessments.some(a => String(a.mark ?? "").trim()))) return "";
+  const d = daysSince(state.lastBackup);
+  if ((d !== null && d < 21) || Date.now() < (state.nudgeUntil || 0)) return "";
+  const safari = isIos && !runningAsApp();
+  return `
+    <div class="nudge">
+      <div class="row-between"><span class="eyebrow">${d === null ? "Keep your marks safe" : `Last backup ${agoText(d)}`}</span>
+        <button class="link-acc sm" data-act="nudge-later">Later</button></div>
+      <p class="fs14 lh135">${safari
+        ? "Safari can clear a website's data if it isn't opened for about a week. Add the app to your Home Screen, or save a Backup file."
+        : "Your marks are stored only on this device. Save a Backup file now and then, so you can restore them on a new phone."}</p>
+      <div class="two-btns${safari ? "" : " one"}">
+        ${safari ? `<button class="btn-line h48" data-act="nudge-install">Add to Home Screen</button>` : ""}
+        <button class="blueprint btn-solid h48" data-act="nudge-backup">${CORNERS}Back up now</button>
+      </div>
+    </div>`;
+}
+
+ACTIONS["nudge-backup"] = () => { $("exportBtn").click(); render(); };
+ACTIONS["nudge-install"] = () => $("installDialog").showModal();
+ACTIONS["nudge-later"] = () => { state.nudgeUntil = Date.now() + 14 * 864e5; saveState(); render(); };
+
 // ---------- Start ----------
 // The intro the first time; after that, the clean list with every folder closed
 
@@ -3592,6 +3759,7 @@ state.selectedId = null;
 state.folders.forEach(f => (f.collapsed = true));
 if (state.modules.length) state.onboarded = true;
 registerSettingsActions();
+askToKeepData();
 ensureColours();
 applySettings();
 saveState();

@@ -1318,3 +1318,15 @@ body.calm *, body.calm *::before, body.calm *::after {
 .accent-btn:active { transform: scale(0.92); }
 .accent-btn i { width: 30px; height: 30px; border-radius: 50%; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); }
 .accent-btn.on { border-color: var(--color-text); }
+
+/* ---------- Exam admission card and backup reminder ---------- */
+.admit-card, .nudge {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 18px;
+  background: var(--glass); border: 0.5px solid var(--glass-edge); border-radius: var(--r-card); box-shadow: var(--glass-shadow);
+}
+.admit-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--color-accent-100); color: var(--color-accent-800); white-space: nowrap; }
+.admit-badge.good { background: color-mix(in srgb, #34c759 18%, transparent); color: color-mix(in srgb, #1d7a36 85%, var(--color-text)); }
+.admit-badge.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+.admit-card .a3 { padding-top: 10px; border-top: 0.5px solid var(--color-divider); }
+.admit-card #admitText[hidden] + .bar6 + .a3, .admit-card .a3:first-child { border-top: 0; padding-top: 0; }
+.nudge .two-btns { margin-top: 2px; }

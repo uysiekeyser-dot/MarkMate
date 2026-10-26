@@ -19,7 +19,7 @@
     if (s.accent && s.accent !== "blue") d.dataset.accent = s.accent; if (s.glass && s.glass !== "full") d.dataset.glass = s.glass; } catch (e) {}</script>
   <!-- Font: the phone's own system font (San Francisco on iPhone), so there is nothing to download -->
   <!-- Change "?v=" after updating a file so browsers load the new version instead of a saved copy -->
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
   <!-- PDF reader (pdf.js) and Word reader (mammoth) for reading module frameworks -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -110,14 +110,15 @@
       <div class="set-group">
         <div class="set-label">Your data</div>
         <div class="set-card">
-          <button id="exportBtn" class="set-row link"><span class="set-name">Backup</span><span class="set-value">Save a file</span></button>
+          <button id="exportBtn" class="set-row link"><span class="set-name">Backup</span><span id="setBackup" class="set-value">Save a file</span></button>
           <label class="set-row link"><span class="set-name">Restore</span><span class="set-value">From a backup file</span><input type="file" id="importInput" accept=".json" hidden></label>
           <button id="installBtn" class="set-row link" hidden><span class="set-name">Install app</span><span class="set-value">On your home screen</span></button>
           <button class="set-row link" data-act="set-intro"><span class="set-name">Show the intro again</span></button>
           <div class="set-row"><span class="set-name">Storage used</span><span id="setStorage" class="set-value"></span></div>
+          <div class="set-row"><span class="set-name">Protected from clean-up</span><span id="setPersist" class="set-value"></span></div>
           <button class="set-row link bad" data-act="set-erase"><span class="set-name">Delete all data</span></button>
         </div>
-        <div class="set-note">Backup saves your modules, marks and settings to a file. Your AI key is never included.</div>
+        <div class="set-note">Backup saves your modules, marks and settings to a file; keep it somewhere safe (Files, iCloud, Google Drive). Your AI key is never included. Safari can clear a website's data after about a week without a visit; apps added to the Home Screen are protected.</div>
       </div>
 
       <div class="set-group">
@@ -187,6 +188,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>
