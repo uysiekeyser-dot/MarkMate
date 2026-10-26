@@ -1194,6 +1194,7 @@ const ICONS = {
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   monitor: '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8M12 17v4"/>',
   camera: '<path d="M14.5 4h-5L7 7H3v13h18V7h-4z"/><circle cx="12" cy="13" r="3"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   hand: '<path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"/>',
   share: '<path d="M4 12v9h16v-9M16 6l-4-4-4 4M12 2v13"/>',
   alert: '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',
@@ -1206,12 +1207,120 @@ const ic = (name, size = 18) =>
 const CORNERS = '<i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>';
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const r1 = n => fmt(n, 1);
+const r1 = n => fmt(n, settings().decimals);
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { /* ignore */ } };
+const reduceMotion = () => !!settings().calm || matchMedia("(prefers-reduced-motion: reduce)").matches;
+const buzz = () => haptic(8);
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
 const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
+
+// ---------- Settings ----------
+// Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
+
+// Change these with every update, so Settings → About shows which version the phone has
+const APP_VERSION = "20";
+const APP_UPDATED = "26 Oct 2026";
+
+const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true };
+const settings = () => ({ ...SETTING_DEFAULTS, ...(state.settings || {}) });
+function setSetting(key, value) {
+  state.settings = { ...settings(), [key]: value };
+  saveState();
+  applySettings();
+}
+const applySettings = () => document.body.classList.toggle("calm", !!settings().calm);
+
+// Calendar reminders for all-day events (they start at midnight): when, and what the reminder says
+const REMINDERS = {
+  day9: { label: "The day before, 09:00", trigger: "-PT15H", text: "Tomorrow" },
+  eve: { label: "The evening before, 18:00", trigger: "-PT6H", text: "Tomorrow" },
+  two: { label: "2 days before, 09:00", trigger: "-P1DT15H", text: "In 2 days" },
+  week: { label: "A week before, 09:00", trigger: "-P6DT15H", text: "In a week" },
+  none: { label: "No reminder", trigger: null, text: "" },
+};
+
+// A light tap when something is saved. Android vibrates; iPhone Safari doesn't allow vibration,
+// but iOS 18 and newer give a small tap when a switch is toggled, so a hidden switch is used there.
+const hapticSwitch = (() => {
+  const label = document.createElement("label");
+  label.setAttribute("aria-hidden", "true");
+  label.style.cssText = "position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.setAttribute("switch", "");
+  input.tabIndex = -1;
+  label.appendChild(input);
+  document.body.appendChild(label);
+  return label;
+})();
+function haptic(pattern = 8) {
+  if (!settings().haptics) return;
+  try {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+    else hapticSwitch.click();
+  } catch (e) { /* ignore */ }
+}
+
+function renderSettings() {
+  const s = settings();
+  document.querySelectorAll("#scrSettings [data-set]").forEach(seg => {
+    const key = seg.dataset.set;
+    seg.querySelectorAll("button[data-v]").forEach(b => b.classList.toggle("on", Number(b.dataset.v) === Number(s[key])));
+  });
+  const other = document.querySelector('[data-ch="set-goal-other"]');
+  const custom = ![50, 60, 75].includes(Number(s.defaultGoal));
+  other.value = custom ? s.defaultGoal : "";
+  other.classList.toggle("on", custom);
+  document.querySelector('[data-ch="set-risk"]').value = String(s.risk);
+  document.querySelector('[data-ch="set-reminder"]').value = s.reminder;
+  document.querySelectorAll('#scrSettings [data-act="set-toggle"]').forEach(b => {
+    const on = !!s[b.dataset.key];
+    b.setAttribute("aria-checked", String(on));
+    b.querySelector(".switch").classList.toggle("on", on);
+  });
+  $("setVersion").textContent = `${APP_VERSION} · ${APP_UPDATED}`;
+  renderAiState();
+  showStorage();
+}
+
+// "5 modules · 2 saved PDFs · 1.4 MB": only your own data (modules, marks, settings and saved PDFs)
+async function showStorage() {
+  const el = $("setStorage");
+  const n = state.modules.length;
+  const files = (await filesDo("readonly", store => store.getAll())) || [];
+  const bytes = new Blob([localStorage.getItem(STORAGE_KEY) || ""]).size + files.reduce((sum, f) => sum + (f && f.size || 0), 0);
+  const size = bytes >= 1e6 ? `${fmt(bytes / 1e6, 1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  el.textContent = [`${n} module${n === 1 ? "" : "s"}`, files.length ? `${files.length} saved PDF${files.length === 1 ? "" : "s"}` : "", size].filter(Boolean).join(" · ");
+}
+
+// The Settings screen's controls (registered once the app's handler lists exist)
+function registerSettingsActions() {
+  ACTIONS["go-settings"] = () => go("settings");
+  ACTIONS["set-pick"] = t => { setSetting(t.closest("[data-set]").dataset.set, Number(t.dataset.v)); renderSettings(); };
+  CHANGES["set-goal-other"] = t => {
+    const v = parseFloat(String(t.value).replace(",", "."));
+    if (v >= 0 && v <= 100) setSetting("defaultGoal", v);
+    renderSettings();
+  };
+  CHANGES["set-risk"] = t => setSetting("risk", Number(t.value));
+  CHANGES["set-reminder"] = t => setSetting("reminder", t.value);
+  ACTIONS["set-toggle"] = t => {
+    const key = t.dataset.key;
+    setSetting(key, !settings()[key]);
+    renderSettings();
+    if (key === "haptics" && settings().haptics) haptic();
+  };
+  ACTIONS["set-intro"] = () => { ui.ob = 0; go("onboarding"); };
+  ACTIONS["set-erase"] = async () => {
+    if (!confirm("Delete all your modules, marks, folders and saved PDFs from this device?\n\nThis can't be undone. Make a Backup first if you might need them.")) return;
+    for (const m of state.modules) await deleteFile(m.id);
+    state = { modules: [], folders: [], selectedId: null, uploadFolderId: null, settings: state.settings, onboarded: false };
+    saveState();
+    showToast("All modules and marks are deleted. Your settings are kept.", 5000);
+    ui.ob = 0;
+    go("onboarding");
+  };
+}
 
 // What's on screen right now (not saved)
 const ui = {
@@ -1303,7 +1412,7 @@ function statusOf(mod) {
   if (p.need > 100) return { text: "Goal out of reach", bad: true };
   const sub = p.onlyFinal ? Number(p.finalRow.a.subMin) || 0 : 0;
   const n = Math.ceil(Math.max(p.need, sub));
-  return { text: p.onlyFinal ? `Need ${n}% in ${shortLabel(p.finalRow.a.name)}` : `Need ${n}% avg on rest`, bad: p.need > 70 };
+  return { text: p.onlyFinal ? `Need ${n}% in ${shortLabel(p.finalRow.a.name)}` : `Need ${n}% avg on rest`, bad: p.need > settings().risk };
 }
 const shortLabel = s => {
   s = String(s || "the final test").replace(/\s*\([^)]*\)\s*$/, "") || String(s);
@@ -1314,9 +1423,9 @@ const shortLabel = s => {
 
 const SCREENS = {
   onboarding: "scrOnboarding", modules: "scrModules", dates: "scrDates", add: "scrAdd",
-  reading: "scrReading", review: "scrReview", module: "scrModule",
+  reading: "scrReading", review: "scrReview", module: "scrModule", settings: "scrSettings",
 };
-const DEPTH = { onboarding: 0, modules: 1, dates: 1, add: 2, module: 2, reading: 3, review: 4 };
+const DEPTH = { onboarding: 0, modules: 1, dates: 1, add: 2, module: 2, settings: 2, reading: 3, review: 4 };
 
 // Deeper screens slide in from the right, going back slides from the left, tabs fade
 function go(screen, extra = {}) {
@@ -1325,7 +1434,6 @@ function go(screen, extra = {}) {
   ui.anim = prev === screen ? "" : dir > 0 ? "push" : dir < 0 ? "pop" : "fade";
   if (prev === "reading" && screen !== "reading") clearInterval(ui.scanTimer);
   closeSheetNow();
-  closeMenu();
   Object.assign(ui, { screen, editing: null }, extra);
   render();
   window.scrollTo(0, 0);
@@ -1340,7 +1448,7 @@ function render() {
   const el = $(SCREENS[s]);
   ({
     onboarding: renderOnboarding, modules: renderModules, dates: renderDates, add: renderAdd,
-    reading: renderReading, review: renderReview, module: renderModulePage,
+    reading: renderReading, review: renderReview, module: renderModulePage, settings: renderSettings,
   })[s](el);
   renderTabs();
   if (ui.anim) {
@@ -1499,8 +1607,8 @@ function nextUpHtml() {
     if (p.need === null) need = "";
     else if (p.need <= 0) { need = "Your goal is already banked"; bad = false; }
     else if (p.need > 100) { need = "Your goal is out of reach"; bad = true; }
-    else if (p.onlyFinal && p.finalRow.a === a) { need = `You need ${Math.ceil(Math.max(p.need, Number(a.subMin) || 0))}%`; bad = p.need > 70; }
-    else { need = `You need ${Math.ceil(p.need)}% on average`; bad = p.need > 70; }
+    else if (p.onlyFinal && p.finalRow.a === a) { need = `You need ${Math.ceil(Math.max(p.need, Number(a.subMin) || 0))}%`; bad = p.need > settings().risk; }
+    else { need = `You need ${Math.ceil(p.need)}% on average`; bad = p.need > settings().risk; }
   }
   const counts = a ? `Counts ${fmt(effectiveWeight(m, a), 1)}%` : "";
   return `
@@ -1517,7 +1625,7 @@ function renderModules(el) {
   const avg = averageOf(mods);
   const avgNote = avg.missing && avg.someCredits
     ? `Add credits to ${avg.missing} more module${avg.missing === 1 ? "" : "s"} (pencil on its page) to weight the average by credits.` : "";
-  const onTrack = mods.filter(m => { const p = plan(m); return p.need === null ? p.finalSoFar >= p.goal : p.need <= 70; }).length;
+  const onTrack = mods.filter(m => { const p = plan(m); return p.need === null ? p.finalSoFar >= p.goal : p.need <= settings().risk; }).length;
   const loose = mods.filter(m => !m.folderId);
   const entering = ui.entering;
 
@@ -1525,7 +1633,7 @@ function renderModules(el) {
     <div class="screen-head">
       <h1 class="h-screen">My modules</h1>
       <div class="head-actions">
-        <button id="menuBtn" class="sq-btn line" data-act="menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false">${ic("more", 22)}</button>
+        <button class="sq-btn line" data-act="go-settings" aria-label="Settings" title="Settings">${ic("gear", 22)}</button>
         <button class="sq-btn solid" data-act="go-add" aria-label="Add a module">${ic("plus", 22)}</button>
       </div>
     </div>
@@ -1891,7 +1999,7 @@ function renderAdd(el) {
         <select class="plain-select" data-ch="upload-folder">${folderOptions(state.uploadFolderId)}</select></label>` : ""}
       <div class="meta13">${ai
         ? "The AI reader is on: frameworks are sent to Google's Gemini AI to be read. Photos need the AI reader."
-        : "Files are read on this phone. Nothing is uploaded unless the AI reader is on (⋯ menu)."}</div>
+        : "Files are read on this phone. Nothing is uploaded unless the AI reader is on (Settings)."}</div>
       <button class="link-acc" data-act="add-manual">${ic("hand", 16)}Add a module by hand instead</button>` : `
       <div class="paste-head">
         <span class="meta13">Paste the assessment table and rules</span>
@@ -1910,7 +2018,7 @@ function renderAdd(el) {
 ACTIONS["add-mode"] = t => { ui.addMode = t.dataset.mode; render(); };
 ACTIONS["choose-files"] = () => $("fileInput").click();
 ACTIONS["take-photo"] = () => {
-  if (!aiOn()) { showToast("Reading a photo needs the AI reader. Turn it on in the ⋯ menu on My modules."); return; }
+  if (!aiOn()) { showToast("Reading a photo needs the AI reader. Turn it on in Settings (the gear on My modules)."); return; }
   $("photoInput").click();
 };
 ACTIONS.sample = t => { ui.pasteText = t.dataset.which === "groups" ? SAMPLE_GROUPS : SAMPLE_SIMPLE; render(); };
@@ -1926,7 +2034,7 @@ ACTIONS["add-manual"] = () => {
   ui.draft = {
     mode: "new",
     mod: {
-      id: uid(), name: "", fileName: "", target: 50, folderId: state.uploadFolderId || null, groups: [], notes: [], rules: [], dates: [],
+      id: uid(), name: "", fileName: "", target: settings().defaultGoal, folderId: state.uploadFolderId || null, groups: [], notes: [], rules: [], dates: [],
       assessments: [
         { id: uid(), name: "Test 1", weight: 25, mark: "", isFinal: false, groupId: null },
         { id: uid(), name: "Assignment 1", weight: 25, mark: "", isFinal: false, groupId: null },
@@ -1999,7 +2107,7 @@ async function nextJob() {
       pasted: !item.file || undefined,
       readBy,
       aiInput: readBy === "ai" ? parsed.input : undefined,
-      target: 50,
+      target: settings().defaultGoal,
       folderId: state.uploadFolderId || null,
       groups: parsed.groups,
       assessments: parsed.assessments,
@@ -2876,7 +2984,7 @@ ACTIONS["ask-delete"] = () => {
     <div class="dlg-back" data-act="dlg-cancel">
       <div class="blueprint dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">${CORNERS}
         <div id="dlgTitle" class="h24">Delete ${esc(code || title)}?</div>
-        <div class="fs14 lh15 dim8">${esc(title)} and all its marks and key dates will be removed from this ${matchMedia("(pointer: coarse)").matches ? "phone" : "device"}. Make a Backup first (⋯ menu) if you might need them.</div>
+        <div class="fs14 lh15 dim8">${esc(title)} and all its marks and key dates will be removed from this ${matchMedia("(pointer: coarse)").matches ? "phone" : "device"}. Make a Backup first (Settings) if you might need them.</div>
         <div class="two-btns">
           <button class="btn-line h48" data-act="dlg-cancel">Cancel</button>
           <button class="btn-bad h48" data-act="dlg-delete">Delete module</button>
@@ -2909,40 +3017,11 @@ ACTIONS["dlg-delete"] = () => {
   });
 };
 
-// ---- The ⋯ menu: AI reader, install, backup, restore, appearance ----
-
-const menu = $("menu");
-// Under the ⋯ button (also after the screen changes size, e.g. a phone's address bar hiding)
-const placeMenu = () => {
-  const b = $("menuBtn");
-  if (!b) return closeMenu();
-  const r = b.getBoundingClientRect();
-  menu.style.top = r.bottom + 8 + "px";
-  menu.style.right = Math.max(12, window.innerWidth - r.right) + "px";
-};
-ACTIONS.menu = t => {
-  if (!menu.hidden) return closeMenu();
-  placeMenu();
-  menu.hidden = false;
-  t.setAttribute("aria-expanded", "true");
-  renderAiState();
-};
-function closeMenu() {
-  if (menu.hidden) return;
-  menu.hidden = true;
-  const b = $("menuBtn");
-  if (b) b.setAttribute("aria-expanded", "false");
-}
-document.addEventListener("click", e => { if (!menu.hidden && !e.target.closest("#menu, #menuBtn")) closeMenu(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
-window.addEventListener("resize", () => { if (!menu.hidden) placeMenu(); });
-window.addEventListener("scroll", closeMenu, { passive: true });
 // The glass header frosts only once something has scrolled under it
 const markScrolled = () => document.body.classList.toggle("scrolled", window.scrollY > 4);
 window.addEventListener("scroll", markScrolled, { passive: true });
-menu.querySelectorAll(".menu-item").forEach(item => item.addEventListener("click", () => closeMenu()));
 
-// Shows whether the AI reader is on, in the menu
+// Shows whether the AI reader is on, in Settings
 function renderAiState() {
   const on = aiOn();
   $("aiState").textContent = on ? "On" : "Off";
@@ -3029,7 +3108,6 @@ let themeChoice = "auto";
 try { themeChoice = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* ignore */ }
 applyTheme(themeChoice);
 document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", e => {
-  e.stopPropagation(); // keep the menu open while choosing
   themeChoice = b.dataset.themeChoice;
   try { localStorage.setItem(THEME_KEY, themeChoice); } catch (err) { /* ignore */ }
   applyTheme(themeChoice);
@@ -3146,6 +3224,7 @@ function calendarFile(mods) {
   };
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Mark Calculator//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
   let count = 0;
+  const rem = REMINDERS[settings().reminder] || REMINDERS.day9;
   for (const m of mods) {
     const { code, title } = splitName(m.name);
     for (const d of m.dates || []) {
@@ -3161,7 +3240,7 @@ function calendarFile(mods) {
         fold(`DESCRIPTION:${text(about)}`),
         `COLOR:${ICS_COLOURS[m.color] || "steelblue"}`,
         "TRANSP:TRANSPARENT",
-        "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15H", fold(`DESCRIPTION:${text(`Tomorrow: ${code || title} ${d.label}`)}`), "END:VALARM",
+        ...(rem.trigger ? ["BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${rem.trigger}`, fold(`DESCRIPTION:${text(`${rem.text}: ${code || title} ${d.label}`)}`), "END:VALARM"] : []),
         "END:VEVENT");
       count++;
     }
@@ -3245,7 +3324,7 @@ async function readShared(payload) {
   const groups = (data.g || []).map(([name, weight]) => ({ id: uid(), name: String(name), weight: Number(weight) || 0 }));
   return {
     id: uid(), name: String(data.n || "Shared module"), fileName: "", shared: true,
-    credits: Number(data.c) > 0 ? Number(data.c) : undefined, target: Number(data.t) || 50,
+    credits: Number(data.c) > 0 ? Number(data.c) : undefined, target: Number(data.t) || settings().defaultGoal,
     folderId: state.uploadFolderId || null, groups,
     assessments: data.a.map(([name, weight, g, fin, sub]) => ({
       id: uid(), name: String(name), weight: Number(weight) || 0, mark: "", isFinal: !!fin,
@@ -3418,7 +3497,7 @@ window.addEventListener("resize", () => {
 // ---------- Motion: numbers count up, bars grow and rows arrive one after another ----------
 // Only when a screen is arrived at (not while you work on it), and not at all with "reduce motion".
 
-function countUp(el, to, decimals = 1) {
+function countUp(el, to, decimals = settings().decimals) {
   if (!el || reduceMotion() || !(to > 0)) return;
   const finalText = el.textContent;
   const tok = String(Math.random());
@@ -3482,7 +3561,7 @@ function celebrate(p) {
   box.setAttribute("role", "status");
   box.innerHTML = `<div class="blueprint cele">${CORNERS}<span class="cele-tick">${ic("check", 30)}</span><div class="h24">Goal reached</div><div class="meta13">${esc(text)}</div></div>`;
   document.body.appendChild(box);
-  try { navigator.vibrate && navigator.vibrate([10, 60, 20]); } catch (e) { /* ignore */ }
+  haptic([10, 60, 20]);
   const card = box.firstElementChild, r = reduceMotion();
   card.animate(r ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: "scale(0.9)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: EASE_OUT });
   card.querySelector(".cele-tick").animate(r ? [{ opacity: 1 }, { opacity: 1 }] : [{ transform: "scale(0.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 360, delay: 120, easing: EASE_OUT, fill: "backwards" });
@@ -3502,7 +3581,9 @@ function celebrate(p) {
 state.selectedId = null;
 state.folders.forEach(f => (f.collapsed = true));
 if (state.modules.length) state.onboarded = true;
+registerSettingsActions();
 ensureColours();
+applySettings();
 saveState();
 ui.screen = state.onboarded ? "modules" : "onboarding";
 ui.anim = "fade";

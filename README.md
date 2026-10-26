@@ -14,7 +14,7 @@ A website where students upload their module frameworks and get a mark calculato
 - **Share with classmates:** the share button on a module's page makes a link and QR code with the module's weights, groups, sub-minimums, rules and key dates (never your marks). A classmate opens it, checks the weights and saves the module, with no uploading.
 - **Credits:** add a module's credits on **Check the weights** (the pencil on its page). Once every module with marks has credits, the average on My modules and in each folder is weighted by credits.
 - **Progress:** each module's page has a chart of your final mark so far and your average on work done after each mark, with your goal as a dashed line. Tap or point at it to read the numbers.
-- The **⋯** menu on My modules has the AI reader, Install app, Backup, Restore and Auto / Light / Dark appearance.
+- **Settings** (the gear on My modules): the default goal for new modules, when a module counts as at risk, how many decimals marks show, the calendar reminder time, Auto / Light / Dark, Reduce animations, Haptics, the AI reader, Backup, Restore, Install app, Show the intro again, Storage used, Delete all data, and the app's version.
 - Everything is saved automatically in your browser. Use **Backup** / **Restore** to move your marks to another device or browser.
 
 Nothing is uploaded to a server: the files are read inside your browser (unless you turn on the AI reader, below).
@@ -24,7 +24,7 @@ Nothing is uploaded to a server: the files are read inside your browser (unless 
 The built-in reader handles common framework layouts. For frameworks it gets wrong, turn on the **AI reader**, which sends the framework text to Google's Gemini AI to work out the assessments, weights, groups, final test, replacement assessments (like A3) and pass rules.
 
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with a Google account and click **Create API key**.
-2. On the site, tap **⋯** on My modules, then **AI reader**. Paste the key, tap **Test key** and then **Save**.
+2. On the site, tap the gear on My modules (**Settings**), then **AI reader**. Paste the key, tap **Test key** and then **Save**.
 3. Add frameworks as usual. For modules you added before, open the module and tap the sparkle button (**Read again with AI**; your marks are kept).
 
 PDF frameworks are sent to the AI as the PDF itself, so it sees the pages (tables, columns, footnotes, even scanned pages) and not just the text; Word files are sent as text, and photos as the photo. Uploaded PDFs are kept in the browser so **Read again with AI** can send them again. If the AI's weights don't add up, it's asked once more to fix them, and if they still don't, the built-in reader's weights are used.
@@ -35,8 +35,8 @@ Each student uses their own key. It's saved only in their own browser and is not
 
 The site can be installed on a phone like an app (an installable web app). It then opens from the home screen, full screen, and works without internet for entering marks and checking key dates. Uploading frameworks and the AI reader still need internet.
 
-- **Android (Chrome):** tap **⋯** on My modules, then **Install app** (or the browser menu → **Install app** / **Add to Home screen**).
-- **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen** → **Add**. **Install app** in the ⋯ menu shows these steps.
+- **Android (Chrome):** tap the gear on My modules (**Settings**), then **Install app** (or the browser menu → **Install app** / **Add to Home screen**).
+- **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen** → **Add**. **Install app** in Settings shows these steps.
 
 On iPhone the installed app keeps its own copy of your data, separate from Safari. Use **Backup** in Safari and **Restore** in the app to bring your modules across. The app updates itself when you upload new files to GitHub.
 
