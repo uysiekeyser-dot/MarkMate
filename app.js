@@ -1218,17 +1218,23 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "20";
+const APP_VERSION = "21";
 const APP_UPDATED = "26 Oct 2026";
 
-const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true };
+const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
 const settings = () => ({ ...SETTING_DEFAULTS, ...(state.settings || {}) });
 function setSetting(key, value) {
   state.settings = { ...settings(), [key]: value };
   saveState();
   applySettings();
 }
-const applySettings = () => document.body.classList.toggle("calm", !!settings().calm);
+// Reduce animations, the accent colour and the glass strength (set on the page, so the styles follow)
+function applySettings() {
+  const s = settings(), root = document.documentElement;
+  document.body.classList.toggle("calm", !!s.calm);
+  if (s.accent && s.accent !== "blue") root.dataset.accent = s.accent; else delete root.dataset.accent;
+  if (s.glass && s.glass !== "full") root.dataset.glass = s.glass; else delete root.dataset.glass;
+}
 
 // Calendar reminders for all-day events (they start at midnight): when, and what the reminder says
 const REMINDERS = {
@@ -1278,6 +1284,8 @@ function renderSettings() {
     b.setAttribute("aria-checked", String(on));
     b.querySelector(".switch").classList.toggle("on", on);
   });
+  document.querySelectorAll('[data-act="set-accent"]').forEach(b => { const on = b.dataset.v === s.accent; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
+  document.querySelectorAll('[data-act="set-glass"]').forEach(b => b.classList.toggle("on", b.dataset.v === s.glass));
   $("setVersion").textContent = `${APP_VERSION} · ${APP_UPDATED}`;
   renderAiState();
   showStorage();
@@ -1310,6 +1318,8 @@ function registerSettingsActions() {
     renderSettings();
     if (key === "haptics" && settings().haptics) haptic();
   };
+  ACTIONS["set-accent"] = t => { setSetting("accent", t.dataset.v); renderSettings(); };
+  ACTIONS["set-glass"] = t => { setSetting("glass", t.dataset.v); renderSettings(); };
   ACTIONS["set-intro"] = () => { ui.ob = 0; go("onboarding"); };
   ACTIONS["set-erase"] = async () => {
     if (!confirm("Delete all your modules, marks, folders and saved PDFs from this device?\n\nThis can't be undone. Make a Backup first if you might need them.")) return;

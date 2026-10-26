@@ -14,7 +14,7 @@ A website where students upload their module frameworks and get a mark calculato
 - **Share with classmates:** the share button on a module's page makes a link and QR code with the module's weights, groups, sub-minimums, rules and key dates (never your marks). A classmate opens it, checks the weights and saves the module, with no uploading.
 - **Credits:** add a module's credits on **Check the weights** (the pencil on its page). Once every module with marks has credits, the average on My modules and in each folder is weighted by credits.
 - **Progress:** each module's page has a chart of your final mark so far and your average on work done after each mark, with your goal as a dashed line. Tap or point at it to read the numbers.
-- **Settings** (the gear on My modules): the default goal for new modules, when a module counts as at risk, how many decimals marks show, the calendar reminder time, Auto / Light / Dark, Reduce animations, Haptics, the AI reader, Backup, Restore, Install app, Show the intro again, Storage used, Delete all data, and the app's version.
+- **Settings** (the gear on My modules): the default goal for new modules, when a module counts as at risk, how many decimals marks show, the calendar reminder time, Auto / Light / Dark, the colour (blue, violet, green, orange or pink), the glass strength (Full, Subtle or Solid), Reduce animations, Haptics, the AI reader, Backup, Restore, Install app, Show the intro again, Storage used, Delete all data, and the app's version.
 - Everything is saved automatically in your browser. Use **Backup** / **Restore** to move your marks to another device or browser.
 
 Nothing is uploaded to a server: the files are read inside your browser (unless you turn on the AI reader, below).

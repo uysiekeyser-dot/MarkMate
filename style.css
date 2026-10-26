@@ -1126,3 +1126,195 @@ body.calm *, body.calm *::before, body.calm *::after {
 }
 .set-select { max-width: 58%; }
 .screen-head, .top-row { background: linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 94%, transparent) 70%, transparent); }
+
+
+/* ---------- Accent colour (Settings → Appearance). Blue is the default above. ---------- */
+/* Solid fills (buttons, date boxes): the accent in light mode, the darker 500 step in dark mode,
+   so white text on them stays readable (contrast 4.2 or more in both). */
+:root { --accent-fill: var(--color-accent); --accent-fill-2: var(--color-accent-600); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --accent-fill: var(--color-accent-500); --accent-fill-2: color-mix(in srgb, var(--color-accent-500) 80%, #000); } }
+:root[data-theme="dark"] { --accent-fill: var(--color-accent-500); --accent-fill-2: color-mix(in srgb, var(--color-accent-500) 80%, #000); }
+.btn-solid, .btn-solid-sm, .sq-btn.solid { background: linear-gradient(180deg, var(--accent-fill), var(--accent-fill-2)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 6px 16px color-mix(in srgb, var(--accent-fill) 35%, transparent); }
+.btn-solid.off { background: var(--color-neutral-300); box-shadow: none; }
+.date-box.soon, .cele-tick { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
+/* The goal panel and the glow follow the accent too */
+:root { --panel-bg: linear-gradient(160deg, var(--color-accent-600), var(--color-accent-800)); --glow-1: color-mix(in srgb, var(--color-accent-400) 55%, transparent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --panel-bg: linear-gradient(160deg, color-mix(in srgb, var(--color-accent-500) 75%, #0b0d14), color-mix(in srgb, var(--color-accent-300) 85%, #0b0d14)); --glow-1: color-mix(in srgb, var(--color-accent-500) 40%, transparent); } }
+:root[data-theme="dark"] { --panel-bg: linear-gradient(160deg, color-mix(in srgb, var(--color-accent-500) 75%, #0b0d14), color-mix(in srgb, var(--color-accent-300) 85%, #0b0d14)); --glow-1: color-mix(in srgb, var(--color-accent-500) 40%, transparent); }
+
+:root[data-accent="violet"] {
+  --color-accent: #6a4fd8;
+  --color-accent-100: #f1edff;
+  --color-accent-200: #e1d9fe;
+  --color-accent-300: #c4b5fb;
+  --color-accent-400: #a28ef5;
+  --color-accent-500: #8466ec;
+  --color-accent-600: #5f43cc;
+  --color-accent-700: #5236b8;
+  --color-accent-800: #3f2a8c;
+  --color-accent-900: #271a57;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="violet"]:not([data-theme="light"]) {
+    --color-accent: #9b84f7;
+    --color-accent-100: #1d1838;
+    --color-accent-200: #282050;
+    --color-accent-300: #382c74;
+    --color-accent-400: #4c3b9e;
+    --color-accent-500: #6a52d0;
+    --color-accent-600: #a491f8;
+    --color-accent-700: #b8a9fa;
+    --color-accent-800: #d3c9fc;
+    --color-accent-900: #110d24;
+  }
+}
+:root[data-accent="violet"][data-theme="dark"] {
+  --color-accent: #9b84f7;
+  --color-accent-100: #1d1838;
+  --color-accent-200: #282050;
+  --color-accent-300: #382c74;
+  --color-accent-400: #4c3b9e;
+  --color-accent-500: #6a52d0;
+  --color-accent-600: #a491f8;
+  --color-accent-700: #b8a9fa;
+  --color-accent-800: #d3c9fc;
+  --color-accent-900: #110d24;
+}
+
+:root[data-accent="green"] {
+  --color-accent: #1f8a4c;
+  --color-accent-100: #e7f7ee;
+  --color-accent-200: #ccefda;
+  --color-accent-300: #9cdcb6;
+  --color-accent-400: #66c28c;
+  --color-accent-500: #36a566;
+  --color-accent-600: #1b7a43;
+  --color-accent-700: #176b3b;
+  --color-accent-800: #11522d;
+  --color-accent-900: #0b331c;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="green"]:not([data-theme="light"]) {
+    --color-accent: #3fbf73;
+    --color-accent-100: #11261a;
+    --color-accent-200: #163423;
+    --color-accent-300: #1e4a31;
+    --color-accent-400: #276642;
+    --color-accent-500: #2f8a56;
+    --color-accent-600: #5fd08e;
+    --color-accent-700: #7fdaa5;
+    --color-accent-800: #aee9c6;
+    --color-accent-900: #08170e;
+  }
+}
+:root[data-accent="green"][data-theme="dark"] {
+  --color-accent: #3fbf73;
+  --color-accent-100: #11261a;
+  --color-accent-200: #163423;
+  --color-accent-300: #1e4a31;
+  --color-accent-400: #276642;
+  --color-accent-500: #2f8a56;
+  --color-accent-600: #5fd08e;
+  --color-accent-700: #7fdaa5;
+  --color-accent-800: #aee9c6;
+  --color-accent-900: #08170e;
+}
+
+:root[data-accent="orange"] {
+  --color-accent: #c4581f;
+  --color-accent-100: #fff1e8;
+  --color-accent-200: #fde0cf;
+  --color-accent-300: #f9c1a0;
+  --color-accent-400: #f39d6b;
+  --color-accent-500: #e97d43;
+  --color-accent-600: #b44d1a;
+  --color-accent-700: #a04416;
+  --color-accent-800: #7a3411;
+  --color-accent-900: #4a200a;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="orange"]:not([data-theme="light"]) {
+    --color-accent: #f08a4b;
+    --color-accent-100: #2b1a10;
+    --color-accent-200: #3b2416;
+    --color-accent-300: #55331f;
+    --color-accent-400: #77452a;
+    --color-accent-500: #a65d36;
+    --color-accent-600: #f4a06b;
+    --color-accent-700: #f6b58a;
+    --color-accent-800: #f9d1b5;
+    --color-accent-900: #170d07;
+  }
+}
+:root[data-accent="orange"][data-theme="dark"] {
+  --color-accent: #f08a4b;
+  --color-accent-100: #2b1a10;
+  --color-accent-200: #3b2416;
+  --color-accent-300: #55331f;
+  --color-accent-400: #77452a;
+  --color-accent-500: #a65d36;
+  --color-accent-600: #f4a06b;
+  --color-accent-700: #f6b58a;
+  --color-accent-800: #f9d1b5;
+  --color-accent-900: #170d07;
+}
+
+:root[data-accent="pink"] {
+  --color-accent: #c93a7a;
+  --color-accent-100: #fdeaf3;
+  --color-accent-200: #fbd3e6;
+  --color-accent-300: #f5a8cb;
+  --color-accent-400: #ec7aad;
+  --color-accent-500: #de5592;
+  --color-accent-600: #b02f69;
+  --color-accent-700: #9c295d;
+  --color-accent-800: #771f47;
+  --color-accent-900: #48132b;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="pink"]:not([data-theme="light"]) {
+    --color-accent: #ee6fa6;
+    --color-accent-100: #2a1220;
+    --color-accent-200: #3a192c;
+    --color-accent-300: #54223f;
+    --color-accent-400: #762f58;
+    --color-accent-500: #a63f78;
+    --color-accent-600: #f28bb7;
+    --color-accent-700: #f5a6c8;
+    --color-accent-800: #f9cbdf;
+    --color-accent-900: #160910;
+  }
+}
+:root[data-accent="pink"][data-theme="dark"] {
+  --color-accent: #ee6fa6;
+  --color-accent-100: #2a1220;
+  --color-accent-200: #3a192c;
+  --color-accent-300: #54223f;
+  --color-accent-400: #762f58;
+  --color-accent-500: #a63f78;
+  --color-accent-600: #f28bb7;
+  --color-accent-700: #f5a6c8;
+  --color-accent-800: #f9cbdf;
+  --color-accent-900: #160910;
+}
+
+/* ---------- Glass strength (Settings → Appearance): Full is the default above ---------- */
+/* Subtle: frostier, calmer glow */
+:root[data-glass="subtle"] { --glass: rgba(255, 255, 255, 0.84); --glass-strong: rgba(255, 255, 255, 0.92); }
+@media (prefers-color-scheme: dark) { :root[data-glass="subtle"]:not([data-theme="light"]) { --glass: rgba(28, 31, 42, 0.88); --glass-strong: rgba(26, 29, 39, 0.94); } }
+:root[data-glass="subtle"][data-theme="dark"] { --glass: rgba(28, 31, 42, 0.88); --glass-strong: rgba(26, 29, 39, 0.94); }
+:root[data-glass="subtle"] body::before { opacity: 0.45; }
+/* Solid: no transparency or blur at all */
+:root[data-glass="solid"] { --glass: var(--solid-card); --glass-strong: var(--solid-card); }
+:root[data-glass="solid"] body::before { display: none; }
+:root[data-glass="solid"] :is(.tabbar, .menu, .sheet, .dlg, .blue-dialog, .cele, .rv-footer, .chart-tip, .toast, .screen-head, .top-row, .backdrop, .dlg-back) {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+:root[data-glass="solid"] body.scrolled :is(.screen-head, .top-row) { background: var(--color-bg); -webkit-mask-image: none; mask-image: none; box-shadow: 0 0.5px 0 var(--color-divider); }
+
+/* Settings: colour swatches */
+.accent-pick { display: flex; justify-content: space-between; gap: 8px; }
+.accent-btn { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid transparent; transition: border-color 150ms ease, transform 160ms var(--ease-out); }
+.accent-btn:active { transform: scale(0.92); }
+.accent-btn i { width: 30px; height: 30px; border-radius: 50%; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.accent-btn.on { border-color: var(--color-text); }
