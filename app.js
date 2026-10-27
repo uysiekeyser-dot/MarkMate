@@ -1178,21 +1178,14 @@ const ICONS = {
   plus: '<path d="M5 12h14M12 5v14"/>',
   chevR: '<path d="m9 18 6-6-6-6"/>',
   chevL: '<path d="m15 18-6-6 6-6"/>',
-  cal: '<rect x="3" y="4" width="18" height="18"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
-  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
-  more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/>',
   pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
   grip: '<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01" stroke-width="2.6"/>',
   sparkles: '<path d="M12 3l1.9 5.8L20 10.7l-6.1 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9z"/><path d="M19 3v4M17 5h4"/>',
-  phone: '<rect x="6" y="2" width="12" height="20"/><path d="M12 18h.01" stroke-width="2.4"/>',
   folderPlus: '<path d="M3 5h6l2 2h10v12H3z"/><path d="M12 10v6M9 13h6"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
-  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-  monitor: '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8M12 17v4"/>',
   camera: '<path d="M14.5 4h-5L7 7H3v13h18V7h-4z"/><circle cx="12" cy="13" r="3"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   hand: '<path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"/>',
@@ -1203,8 +1196,6 @@ const ICONS = {
 };
 const ic = (name, size = 18) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-// The "+" registration marks on framed objects
-const CORNERS = '<i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>';
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const r1 = n => fmt(n, settings().decimals);
@@ -1218,7 +1209,7 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "23";
+const APP_VERSION = "24";
 const APP_UPDATED = "26 Oct 2026";
 
 const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
@@ -1563,14 +1554,14 @@ function renderOnboarding(el) {
   el.innerHTML = `
     <div class="ob">
       <div class="row-between"><div class="brand">Mark Calculator</div><button class="link-acc pad10" data-act="ob-skip">Skip</button></div>
-      <div class="blueprint ob-fig">${CORNERS}<div class="ob-anim" key="${ob}">${obFigure(ob)}</div></div>
+      <div class="blueprint ob-fig"><div class="ob-anim" key="${ob}">${obFigure(ob)}</div></div>
       <div class="ob-text ob-anim">
         <div class="ob-num">0${ob + 1} / 04</div>
         <h1 class="ob-title">${OB[ob][0]}</h1>
         <p class="ob-body">${OB[ob][1]}</p>
       </div>
       <div class="ob-dots">${OB.map((_, i) => `<i class="${i <= ob ? "on" : ""}"></i>`).join("")}</div>
-      <button class="blueprint btn-solid h54" data-act="ob-next">${CORNERS}${ob === 3 ? "Add your first module" : "Next"}</button>
+      <button class="blueprint btn-solid h54" data-act="ob-next">${ob === 3 ? "Add your first module" : "Next"}</button>
     </div>`;
 }
 ACTIONS["ob-next"] = () => {
@@ -1607,7 +1598,7 @@ function nextUpHtml() {
   const nd = upcomingDates()[0];
   if (!nd) {
     return `
-      <div class="blueprint next-up">${CORNERS}
+      <div class="blueprint next-up">
         <div class="eyebrow">Next up</div>
         <div class="nu-what">Nothing coming up</div>
         <div class="meta13">Dates of tests and due dates show here. Add them on a module's page if the framework had none.</div>
@@ -1625,7 +1616,7 @@ function nextUpHtml() {
   }
   const counts = a ? `Counts ${fmt(effectiveWeight(m, a), 1)}%` : "";
   return `
-    <button class="blueprint next-up press" data-act="open-module" data-id="${m.id}">${CORNERS}
+    <button class="blueprint next-up press" data-act="open-module" data-id="${m.id}">
       <span class="row-between"><span class="eyebrow">Next up</span><span class="nu-when${nd.n <= 7 ? " soon" : ""}">${whenText(nd.n)}</span></span>
       <span class="nu-what">${esc(nd.d.label)}</span>
       <span class="nu-mod">${swatch(m)}${esc(code ? `${code} · ${title}` : title)} · ${dayMonth(nd.d.date)}</span>
@@ -1658,11 +1649,11 @@ function renderModules(el) {
     </div>
     ${avgNote ? `<div class="meta12 summary-note">${avgNote}</div>` : ""}
     ${backupNudgeHtml()}` : `
-    <div class="blueprint empty">${CORNERS}
+    <div class="blueprint empty">
       <div class="eyebrow">No modules yet</div>
       <p>Upload a module framework and the calculator finds every test and assignment with its weight. Your modules will look like this:</p>
       <ul class="mod-list ghost" aria-hidden="true">${exampleRowHtml()}</ul>
-      <button class="blueprint btn-solid" data-act="go-add">${CORNERS}Add your first module</button>
+      <button class="blueprint btn-solid" data-act="go-add">Add your first module</button>
     </div>`}
     <ul id="moduleList" class="mod-list">
       ${state.folders.map(folderHtml).join("")}
@@ -1940,7 +1931,7 @@ function renderDates(el) {
           </button>`;
         }).join("")}
       </div>`).join("") : `
-      <div class="blueprint empty">${CORNERS}
+      <div class="blueprint empty">
         <div class="eyebrow">Nothing coming up</div>
         <p>Dates of tests, exams and due dates are read from each framework. You can add or fix them on a module's page.</p>
       </div>`}`;
@@ -1999,12 +1990,12 @@ function renderAdd(el) {
       <button class="${upload ? "" : "on"}" data-act="add-mode" data-mode="paste">Paste text</button>
     </div>
     ${upload ? `
-      <div id="dropPanel" class="blueprint drop">${CORNERS}
+      <div id="dropPanel" class="blueprint drop">
         <span class="acc7">${ic("upload", 36)}</span>
         <div class="h22">Upload module framework</div>
         <div class="meta14 narrow">PDF, Word (.docx), text file${ai ? " or a photo of the page" : ""}. You can choose several at once.</div>
         <div class="stack10">
-          <button class="blueprint btn-solid" data-act="choose-files">${CORNERS}Choose files</button>
+          <button class="blueprint btn-solid" data-act="choose-files">Choose files</button>
           <button class="btn-line" data-act="take-photo">${ic("camera", 18)}Take a photo</button>
         </div>
       </div>
@@ -2020,7 +2011,7 @@ function renderAdd(el) {
         <span class="row-gap12"><button class="link-acc sm" data-act="sample" data-which="simple">Simple sample</button><button class="link-acc sm" data-act="sample" data-which="groups">Sample with groups</button></span>
       </div>
       <textarea id="pasteBox" class="paste" spellcheck="false" data-in="paste" placeholder="Copy the assessment section of your framework and paste it here">${esc(ui.pasteText)}</textarea>
-      <button class="blueprint btn-solid" data-act="read-paste">${CORNERS}Read framework</button>`}`;
+      <button class="blueprint btn-solid" data-act="read-paste">Read framework</button>`}`;
 
   const panel = $("dropPanel");
   if (panel) {
@@ -2210,23 +2201,23 @@ function renderReading(el) {
     el.innerHTML = `
       <div class="title-block pt12"><div class="eyebrow">${esc(count + job.src)}</div>
         <h1 class="h-screen h32">${job.error ? "Couldn't read it" : "Reading framework…"}</h1></div>
-      <div class="blueprint read-wait">${CORNERS}
+      <div class="blueprint read-wait">
         <div id="readStatus" class="${job.error ? "bad-text" : "pulse"}">${esc(job.error || job.status)}</div>
       </div>
-      ${job.error ? `<button class="blueprint btn-solid" data-act="${ui.queue.length ? "next-file" : "go-add"}">${CORNERS}${ui.queue.length ? "Next file" : "Back"}</button>` : ""}`;
+      ${job.error ? `<button class="blueprint btn-solid" data-act="${ui.queue.length ? "next-file" : "go-add"}">${ui.queue.length ? "Next file" : "Back"}</button>` : ""}`;
     return;
   }
   el.innerHTML = `
     <div class="title-block pt12"><div class="eyebrow">${esc(count + job.src)}</div>
       <h1 id="readTitle" class="h-screen h32">${job.done ? "Framework read" : "Reading framework…"}</h1></div>
-    <div class="blueprint read-lines" id="readLines">${CORNERS}
+    <div class="blueprint read-lines" id="readLines">
       ${job.lines.map((t, i) => `<div class="ln${i < job.scan ? " seen" : ""}${i < job.scan && job.hits[i] ? " hit" : ""}"><span>${esc(t)}</span><b>${i < job.scan ? esc(job.hits[i]) : ""}</b></div>`).join("")}
     </div>
     <div class="row-between fs14 sticky-sum">
       <span id="readCount"></span>
       <span id="readTotal" class="cond15"></span>
     </div>
-    <div id="readDone" ${job.done ? "" : "hidden"}><button class="blueprint btn-solid" data-act="go-review">${CORNERS}Check the weights</button></div>
+    <div id="readDone" ${job.done ? "" : "hidden"}><button class="blueprint btn-solid" data-act="go-review">Check the weights</button></div>
     ${job.done ? "" : `<button id="readSkip" class="link-acc center" data-act="read-all">Show all</button>`}`;
   paintReadCount();
 }
@@ -2346,7 +2337,7 @@ function renderReview(el) {
     </div>
     ${notesRulesHtml(mod)}
     <div class="rv-footer">
-      <button id="rvSave" class="blueprint btn-solid" data-act="rv-save">${CORNERS}<span></span></button>
+      <button id="rvSave" class="blueprint btn-solid" data-act="rv-save"><span></span></button>
       <button id="rvAnyway" class="link-acc center sm" data-act="rv-save-anyway" hidden>Save anyway (my framework adds up differently)</button>
     </div>`;
   paintReview();
@@ -2423,7 +2414,7 @@ function splitPanelHtml(mod, a) {
       <div id="splitPreview" class="meta13"></div>
       <div class="two-btns">
         <button class="btn-line h48" data-act="split-cancel">Cancel</button>
-        <button class="blueprint btn-solid h48" data-act="split-do">${CORNERS}Split</button>
+        <button class="blueprint btn-solid h48" data-act="split-do">Split</button>
       </div>
     </div>`;
 }
@@ -2642,7 +2633,7 @@ function renderModulePage(el) {
       ${weightNote ? `<div class="warn-line">${esc(weightNote)}</div>` : ""}
     </div>
 
-    <div class="blueprint stats2">${CORNERS}
+    <div class="blueprint stats2">
       <div class="cell wide gap12">
         <div class="row-between base"><span id="heroLabel" class="eyebrow"></span><span id="heroGoal" class="meta12"></span></div>
         <div id="hero" class="hero80"></div>
@@ -2955,7 +2946,7 @@ ACTIONS["open-sheet"] = t => {
         <div><div class="eyebrow sm">Counts for</div><div id="sheetCounts" class="cond20"></div></div>
         <div><div class="eyebrow sm">Final mark so far</div><div id="sheetFinal" class="cond20"></div></div>
       </div>
-      <button class="blueprint btn-solid" data-act="sheet-save">${CORNERS}Save mark</button>
+      <button class="blueprint btn-solid" data-act="sheet-save">Save mark</button>
     </div>`;
   layer.hidden = false;
   sheet.el = layer.querySelector(".sheet");
@@ -3098,7 +3089,7 @@ ACTIONS["ask-delete"] = () => {
   const layer = $("dlgLayer");
   layer.innerHTML = `
     <div class="dlg-back" data-act="dlg-cancel">
-      <div class="blueprint dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">${CORNERS}
+      <div class="blueprint dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">
         <div id="dlgTitle" class="h24">Delete ${esc(code || title)}?</div>
         <div class="fs14 lh15 dim8">${esc(title)} and all its marks and key dates will be removed from this ${matchMedia("(pointer: coarse)").matches ? "phone" : "device"}. Make a Backup first (Settings) if you might need them.</div>
         <div class="two-btns">
@@ -3494,14 +3485,14 @@ ACTIONS["share-module"] = async () => {
   const layer = $("dlgLayer");
   layer.innerHTML = `
     <div class="dlg-back" data-act="dlg-cancel">
-      <div class="blueprint dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">${CORNERS}
+      <div class="blueprint dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
         <div id="dlgTitle" class="h24">Share ${esc(code || title)}</div>
         <div class="fs14 lh15 dim8">Classmates get the weights, groups, rules and key dates, so they don't have to upload the framework. Your marks are not shared.</div>
         <div id="qrBox" class="qr-box"><span class="meta12">Making the QR code…</span></div>
         <div class="meta12 c">Scan with a phone camera, or send the link.</div>
         <div class="two-btns">
           <button class="btn-line h48" data-act="share-copy">Copy link</button>
-          <button class="blueprint btn-solid h48" data-act="share-send">${CORNERS}Send link</button>
+          <button class="blueprint btn-solid h48" data-act="share-send">Send link</button>
         </div>
         <button class="link-acc center sm" data-act="dlg-cancel">Close</button>
       </div>
@@ -3679,7 +3670,7 @@ function celebrate(p) {
   const box = document.createElement("div");
   box.className = "celebrate";
   box.setAttribute("role", "status");
-  box.innerHTML = `<div class="blueprint cele">${CORNERS}<span class="cele-tick">${ic("check", 30)}</span><div class="h24">Goal reached</div><div class="meta13">${esc(text)}</div></div>`;
+  box.innerHTML = `<div class="blueprint cele"><span class="cele-tick">${ic("check", 30)}</span><div class="h24">Goal reached</div><div class="meta13">${esc(text)}</div></div>`;
   document.body.appendChild(box);
   haptic([10, 60, 20]);
   const card = box.firstElementChild, r = reduceMotion();
@@ -3833,7 +3824,7 @@ function backupNudgeHtml() {
         : "Your marks are stored only on this device. Save a Backup file now and then, so you can restore them on a new phone."}</p>
       <div class="two-btns${safari ? "" : " one"}">
         ${safari ? `<button class="btn-line h48" data-act="nudge-install">Add to Home Screen</button>` : ""}
-        <button class="blueprint btn-solid h48" data-act="nudge-backup">${CORNERS}Back up now</button>
+        <button class="blueprint btn-solid h48" data-act="nudge-backup">Back up now</button>
       </div>
     </div>`;
 }
