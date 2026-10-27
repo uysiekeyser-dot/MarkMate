@@ -1330,3 +1330,11 @@ body.calm *, body.calm *::before, body.calm *::after {
 .admit-card .a3 { padding-top: 10px; border-top: 0.5px solid var(--color-divider); }
 .admit-card #admitText[hidden] + .bar6 + .a3, .admit-card .a3:first-child { border-top: 0; padding-top: 0; }
 .nudge .two-btns { margin-top: 2px; }
+
+/* ---------- Split into parts ---------- */
+.split-panel { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding: 14px; border-radius: 16px; background: color-mix(in srgb, var(--color-accent) 8%, transparent); border: 0.5px solid color-mix(in srgb, var(--color-accent) 25%, transparent); }
+.split-row { display: flex; align-items: center; gap: 10px; }
+.num-box.w64 { width: 64px; }
+.num-box.w64 input { text-align: center; }
+.split-name { display: flex; flex-direction: column; gap: 4px; }
+.split-name .box-input { height: 44px; }

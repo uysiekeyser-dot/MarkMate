@@ -1218,7 +1218,7 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "22";
+const APP_VERSION = "23";
 const APP_UPDATED = "26 Oct 2026";
 
 const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
@@ -2272,7 +2272,8 @@ function finishScan() {
 }
 ACTIONS["read-all"] = finishScan;
 ACTIONS["next-file"] = () => nextJob();
-ACTIONS["go-review"] = () => { ui.draft = ui.job.draft; go("review"); };
+ACTIONS["go-review"] = () => {
+  ui.splitFor = null; ui.draft = ui.job.draft; go("review"); };
 
 // ---- 6. Check the weights (new modules, and "Edit" on a module) ----
 
@@ -2349,6 +2350,7 @@ function renderReview(el) {
       <button id="rvAnyway" class="link-acc center sm" data-act="rv-save-anyway" hidden>Save anyway (my framework adds up differently)</button>
     </div>`;
   paintReview();
+  paintSplitPreview();
 }
 
 function reviewGroupHtml(mod, g) {
@@ -2379,12 +2381,99 @@ function reviewRowHtml(mod, a) {
       <div class="chips">
         ${date ? `<span class="chip plain">${dayMonth(date.date)}</span>` : ""}
         <button class="chip${sub ? " on" : ""}" data-act="a-sub">${sub ? `Sub-minimum ${fmt(sub)}%` : "+ Sub-minimum"}</button>
+        ${a.isFinal ? "" : `<button class="chip" data-act="a-split">Split into parts</button>`}
         ${mod.groups.length ? `<select class="chip chip-select" data-ch="a-group" aria-label="Group">
           <option value="">Not in a group</option>${mod.groups.map(x => `<option value="${x.id}"${x.id === a.groupId ? " selected" : ""}>In ${esc(x.name || "group")}</option>`).join("")}
         </select>` : ""}
       </div>
+      ${ui.splitFor === a.id ? splitPanelHtml(mod, a) : ""}
     </div>`;
 }
+
+// ---- Split into parts: one assessment ("Practicals 12.5%") becomes equal parts ----
+// On its own it becomes a group with the same weight of the final mark, its parts sharing the
+// group equally; inside a group, its share of the group is shared by the parts. Either way the
+// parts together count exactly what the assessment counted, so the final mark doesn't change.
+
+// "Tutorial quizzes 3x" → 3 parts named "Tutorial quiz"
+const partsCount = name => {
+  const m = String(name).match(/(\d{1,2})\s*[x×](?![a-z])|[x×]\s*(\d{1,2})\b|\((\d{1,2})\)/i);
+  const n = m && Number(m[1] || m[2] || m[3]);
+  return n >= 2 && n <= 30 ? n : 3;
+};
+const groupNameOf = name => String(name).replace(/\s*(\(?\d{1,2}\s*[x×]\)?|\(?[x×]\s*\d{1,2}\)?|\(\d{1,2}\))\s*$/i, "").trim() || String(name);
+function singular(name) {
+  const words = groupNameOf(name).replace(/\b(components?|sections?|marks?|total)\b/gi, "").replace(/\s+/g, " ").trim().split(" ");
+  const last = words.pop() || "Part";
+  const one = /zzes$/i.test(last) ? last.slice(0, -3) : /ies$/i.test(last) ? last.slice(0, -3) + "y"
+    : /(ss|x|ch|sh)es$/i.test(last) ? last.slice(0, -2) : /[^s]s$/i.test(last) ? last.slice(0, -1) : last;
+  return [...words, one].join(" ");
+}
+
+function splitPanelHtml(mod, a) {
+  const n = ui.splitN || partsCount(a.name);
+  const base = ui.splitName ?? singular(a.name);
+  return `
+    <div class="split-panel">
+      <div class="split-row"><span class="fs14">Split into</span>
+        <label class="num-box w64"><input type="number" inputmode="numeric" min="2" max="30" step="1" data-in="split-n" value="${n}" aria-label="Number of parts"></label>
+        <span class="fs14">equal parts</span></div>
+      <label class="split-name"><span class="meta12">Name of each part</span>
+        <input class="box-input" data-in="split-name" value="${esc(base)}" aria-label="Name of each part"></label>
+      <div id="splitPreview" class="meta13"></div>
+      <div class="two-btns">
+        <button class="btn-line h48" data-act="split-cancel">Cancel</button>
+        <button class="blueprint btn-solid h48" data-act="split-do">${CORNERS}Split</button>
+      </div>
+    </div>`;
+}
+
+// "Tutorial quiz 1, 2 and 3 · each 4.17% of the final mark (12.5% together)"
+function paintSplitPreview() {
+  const el = $("splitPreview");
+  const mod = ui.draft && ui.draft.mod;
+  const a = mod && mod.assessments.find(x => x.id === ui.splitFor);
+  if (!el || !a) return;
+  const n = clamp(Math.round(ui.splitN || partsCount(a.name)), 2, 30);
+  const base = (ui.splitName ?? singular(a.name)).trim() || "Part";
+  const each = effectiveWeight(mod, a) / n;
+  const names = n <= 4 ? [...Array(n)].map((_, i) => `${base} ${i + 1}`).join(", ").replace(/, ([^,]*)$/, " and $1") : `${base} 1 to ${n}`;
+  el.textContent = `${names} · each ${fmt(each, 2)}% of the final mark (${fmt(effectiveWeight(mod, a), 2)}% together)`;
+}
+
+ACTIONS["a-split"] = t => {
+  ui.splitFor = t.closest("[data-aid]").dataset.aid;
+  ui.splitN = null;
+  ui.splitName = null;
+  renderReview($("scrReview"));
+  const input = document.querySelector('[data-in="split-n"]');
+  if (input) input.focus();
+};
+ACTIONS["split-cancel"] = () => { ui.splitFor = null; renderReview($("scrReview")); };
+INPUTS["split-n"] = t => { ui.splitN = parseInt(t.value, 10) || null; paintSplitPreview(); };
+INPUTS["split-name"] = t => { ui.splitName = t.value; paintSplitPreview(); };
+ACTIONS["split-do"] = () => {
+  const m = ui.draft.mod;
+  const a = m.assessments.find(x => x.id === ui.splitFor);
+  if (!a) return;
+  const n = clamp(Math.round(ui.splitN || partsCount(a.name)), 2, 30);
+  const base = (ui.splitName ?? singular(a.name)).trim() || "Part";
+  const mark = String(a.mark ?? "").trim(); // a mark already entered goes on every part, so nothing changes
+  let groupId = a.groupId, weight;
+  if (!a.groupId) {
+    const g = { id: uid(), name: groupNameOf(a.name), weight: Number(a.weight) || 0 };
+    m.groups.push(g);
+    groupId = g.id;
+    weight = Math.round((100 / n) * 10000) / 10000;
+  } else {
+    weight = Math.round(((Number(a.weight) || 0) / n) * 10000) / 10000;
+  }
+  const parts = [...Array(n)].map((_, i) => ({ id: uid(), name: `${base} ${i + 1}`, weight, mark, isFinal: false, groupId }));
+  m.assessments.splice(m.assessments.indexOf(a), 1, ...parts);
+  ui.splitFor = null;
+  renderReview($("scrReview"));
+  showToast(`Split into ${n} parts of ${fmt(effectiveWeight(m, parts[0]), 2)}% each. The final mark stays the same.`, 4000);
+};
 
 function notesRulesHtml(mod) {
   const notes = mod.notes || [], rules = mod.rules || [];
@@ -2752,6 +2841,7 @@ CHANGES["mod-folder"] = t => {
   renderModulePage($("scrModule"));
 };
 ACTIONS["edit-module"] = () => {
+  ui.splitFor = null;
   ui.draft = { mode: "edit", mod: JSON.parse(JSON.stringify(currentModule())) };
   go("review");
 };
