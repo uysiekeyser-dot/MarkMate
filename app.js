@@ -1209,8 +1209,8 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "24";
-const APP_UPDATED = "26 Oct 2026";
+const APP_VERSION = "25";
+const APP_UPDATED = "28 Oct 2026";
 
 const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
 const settings = () => ({ ...SETTING_DEFAULTS, ...(state.settings || {}) });
@@ -1229,10 +1229,10 @@ function applySettings() {
 
 // Calendar reminders for all-day events (they start at midnight): when, and what the reminder says
 const REMINDERS = {
-  day9: { label: "The day before, 09:00", trigger: "-PT15H", text: "Tomorrow" },
-  eve: { label: "The evening before, 18:00", trigger: "-PT6H", text: "Tomorrow" },
-  two: { label: "2 days before, 09:00", trigger: "-P1DT15H", text: "In 2 days" },
-  week: { label: "A week before, 09:00", trigger: "-P6DT15H", text: "In a week" },
+  day9: { label: "The day before, 09:00", trigger: "-PT15H", days: 1, hour: 9, text: "Tomorrow" },
+  eve: { label: "The evening before, 18:00", trigger: "-PT6H", days: 1, hour: 18, text: "Tomorrow" },
+  two: { label: "2 days before, 09:00", trigger: "-P1DT15H", days: 2, hour: 9, text: "In 2 days" },
+  week: { label: "A week before, 09:00", trigger: "-P6DT15H", days: 7, hour: 9, text: "In a week" },
   none: { label: "No reminder", trigger: null, text: "" },
 };
 
@@ -1427,9 +1427,9 @@ const shortLabel = s => {
 
 const SCREENS = {
   onboarding: "scrOnboarding", modules: "scrModules", dates: "scrDates", add: "scrAdd",
-  reading: "scrReading", review: "scrReview", module: "scrModule", settings: "scrSettings",
+  reading: "scrReading", review: "scrReview", module: "scrModule", settings: "scrSettings", overview: "scrOverview",
 };
-const DEPTH = { onboarding: 0, modules: 1, dates: 1, add: 2, module: 2, settings: 2, reading: 3, review: 4 };
+const DEPTH = { onboarding: 0, modules: 1, dates: 1, overview: 1, add: 2, module: 2, settings: 2, reading: 3, review: 4 };
 
 // Deeper screens slide in from the right, going back slides from the left, tabs fade
 function go(screen, extra = {}) {
@@ -1448,11 +1448,11 @@ function render() {
   const s = ui.screen;
   ui.entering = !!ui.anim;
   for (const [key, id] of Object.entries(SCREENS)) $(id).hidden = key !== s;
-  $("tabBar").hidden = !(s === "modules" || s === "dates");
+  $("tabBar").hidden = !(s === "modules" || s === "dates" || s === "overview");
   const el = $(SCREENS[s]);
   ({
     onboarding: renderOnboarding, modules: renderModules, dates: renderDates, add: renderAdd,
-    reading: renderReading, review: renderReview, module: renderModulePage, settings: renderSettings,
+    reading: renderReading, review: renderReview, module: renderModulePage, settings: renderSettings, overview: renderOverview,
   })[s](el);
   renderTabs();
   if (ui.anim) {
@@ -1464,7 +1464,7 @@ function render() {
 }
 
 function renderTabs() {
-  $("tabBar").innerHTML = [["Modules", "modules"], ["Key dates", "dates"]].map(([label, key]) =>
+  $("tabBar").innerHTML = [["Modules", "modules"], ["Key dates", "dates"], ["Overview", "overview"]].map(([label, key]) =>
     `<button class="tab${ui.screen === key ? " on" : ""}" data-act="tab" data-to="${key}"><i></i>${label}</button>`).join("");
 }
 
@@ -1562,6 +1562,7 @@ function renderOnboarding(el) {
       </div>
       <div class="ob-dots">${OB.map((_, i) => `<i class="${i <= ob ? "on" : ""}"></i>`).join("")}</div>
       <button class="blueprint btn-solid h54" data-act="ob-next">${ob === 3 ? "Add your first module" : "Next"}</button>
+      ${ob === 3 ? `<button class="link-acc center" data-act="try-example">Try with an example module first</button>` : ""}
     </div>`;
 }
 ACTIONS["ob-next"] = () => {
@@ -1619,7 +1620,7 @@ function nextUpHtml() {
     <button class="blueprint next-up press" data-act="open-module" data-id="${m.id}">
       <span class="row-between"><span class="eyebrow">Next up</span><span class="nu-when${nd.n <= 7 ? " soon" : ""}">${whenText(nd.n)}</span></span>
       <span class="nu-what">${esc(nd.d.label)}</span>
-      <span class="nu-mod">${swatch(m)}${esc(code ? `${code} · ${title}` : title)} · ${dayMonth(nd.d.date)}</span>
+      <span class="nu-mod">${swatch(m)}${esc(code ? `${code} · ${title}` : title)} · ${dayMonth(nd.d.date)}${dateExtra(nd.d) ? " · " + esc(dateExtra(nd.d)) : ""}</span>
       ${counts || need ? `<span class="nu-need">${counts ? `<span>${counts}</span>` : ""}${need ? `<b class="${bad ? "bad-text" : "acc7"}">${esc(need)}</b>` : ""}</span>` : ""}
     </button>`;
 }
@@ -1654,6 +1655,7 @@ function renderModules(el) {
       <p>Upload a module framework and the calculator finds every test and assignment with its weight. Your modules will look like this:</p>
       <ul class="mod-list ghost" aria-hidden="true">${exampleRowHtml()}</ul>
       <button class="blueprint btn-solid" data-act="go-add">Add your first module</button>
+      <button class="btn-line h48" data-act="try-example">Try with an example module</button>
     </div>`}
     <ul id="moduleList" class="mod-list">
       ${state.folders.map(folderHtml).join("")}
@@ -1773,16 +1775,21 @@ ACTIONS["folder-rename"] = t => {
 };
 ACTIONS["folder-delete"] = t => {
   const f = state.folders.find(x => x.id === t.closest(".folder").dataset.fid);
+  const i = state.folders.indexOf(f);
   const mods = state.modules.filter(m => m.folderId === f.id);
-  const msg = mods.length
-    ? `Delete the folder "${f.name}"? Its ${mods.length} module${mods.length > 1 ? "s" : ""} will stay, just not in a folder.`
-    : `Delete the folder "${f.name}"?`;
-  if (!confirm(msg)) return;
+  const wasUpload = state.uploadFolderId === f.id;
   mods.forEach(m => (m.folderId = null));
-  state.folders = state.folders.filter(x => x.id !== f.id);
-  if (state.uploadFolderId === f.id) state.uploadFolderId = null;
+  state.folders.splice(i, 1);
+  if (wasUpload) state.uploadFolderId = null;
   saveState();
   render();
+  undoable(mods.length ? `Deleted the folder ${f.name}. Its modules are kept.` : `Deleted the folder ${f.name}.`, () => {
+    state.folders.splice(Math.min(i, state.folders.length), 0, f);
+    mods.forEach(m => (m.folderId = f.id));
+    if (wasUpload) state.uploadFolderId = f.id;
+    saveState();
+    render();
+  });
 };
 ACTIONS["new-folder"] = () => {
   const f = { id: uid(), name: `Semester ${state.folders.length + 1}`, collapsed: false };
@@ -1926,7 +1933,7 @@ function renderDates(el) {
           return `
           <button class="date-row press" data-act="open-module-dates" data-id="${x.m.id}">
             <span class="date-box${soon ? " soon" : ""}"><b>${Number(x.d.date.slice(8))}</b><span>${MON[Number(x.d.date.slice(5, 7)) - 1]}</span></span>
-            <span class="date-what"><span class="date-name">${esc(x.d.label)}</span><span class="meta13">${swatch(x.m)}${esc(code || title)}${weight}</span></span>
+            <span class="date-what"><span class="date-name">${esc(x.d.label)}</span><span class="meta13">${swatch(x.m)}${esc(code || title)}${weight}</span>${dateExtra(x.d) ? `<span class="meta13 date-extra">${esc(dateExtra(x.d))}</span>` : ""}</span>
             <span class="date-when${soon ? " soon" : ""}">${whenText(x.n)}</span>
           </button>`;
         }).join("")}
@@ -2598,7 +2605,7 @@ function renderModulePage(el) {
     : Math.abs(c.totalWeight - 100) > 0.01 ? `The weights add up to ${fmt(c.totalWeight, 2)}%, not 100%. Results are scaled to 100% for now; tap Edit to fix them.` : "";
   const source = mod.fileName
     ? `Read from ${mod.fileName}${mod.readBy === "ai" ? ` · by the AI${mod.aiInput === "pdf" ? " from the PDF" : mod.aiInput === "photo" ? " from a photo" : ""}` : ""}`
-    : mod.pasted ? "From pasted text" : mod.shared ? "Shared by a classmate" : "Added by hand";
+    : mod.example ? "Example module · delete it with the bin when you're done" : mod.pasted ? "From pasted text" : mod.shared ? "Shared by a classmate" : "Added by hand";
   const credits = Number(mod.credits) > 0 ? ` · ${fmt(mod.credits)} credits` : "";
   const custom = !GOALS.some(([g]) => g === Number(mod.target));
 
@@ -2687,8 +2694,15 @@ function renderModulePage(el) {
       <div id="datesEdit">${datesEditorHtml(mod)}</div>
     </div>
 
+    <div class="notes-sec">
+      <div class="row-between"><h2 class="h22">Notes</h2><span id="memoSaved" class="meta12"></span></div>
+      <textarea class="memo" data-in="memo" rows="3" placeholder="Topics for the test, the lecturer's email, anything you want to remember…" aria-label="Notes">${esc(mod.memo || "")}</textarea>
+    </div>
+
     ${notesRulesHtml(mod)}`;
   paintModule();
+  const memo = el.querySelector(".memo");
+  if (memo && memo.value) requestAnimationFrame(() => fitMemo(memo));
   if (ui.entering) introduceModule();
 }
 
@@ -2843,16 +2857,20 @@ document.addEventListener("keydown", e => {
 
 // The module's own list of dates, to fix or add dates
 function datesEditorHtml(mod) {
-  const sorted = [...(mod.dates || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const sorted = [...(mod.dates || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time || "").localeCompare(String(b.time || "")));
   if (!sorted.length) return `<div class="meta13 pt6">No dates found in the framework. Add the dates of tests and due dates to see them on Key dates.</div>`;
   return sorted.map(d => {
     const n = d.date ? daysUntil(d.date) : null;
     return `
       <div class="de-row${n !== null && n < 0 ? " past" : ""}" data-did="${d.id}">
-        <input class="ghost-input" data-in="d-label" value="${esc(d.label)}" placeholder="e.g. Test 1" aria-label="What">
-        <input class="box-input date" type="date" data-ch="d-date" value="${esc(d.date || "")}" aria-label="Date">
-        <span class="meta12 de-count${n !== null && n >= 0 && n <= 7 ? " acc7" : ""}">${n === null ? "" : n < 0 ? "done" : whenText(n).toLowerCase()}</span>
+        <input class="ghost-input de-label" data-in="d-label" value="${esc(d.label)}" placeholder="e.g. Test 1" aria-label="What">
         <button class="x" data-act="d-remove" aria-label="Remove date">${ic("x", 16)}</button>
+        <div class="de-when">
+          <input class="box-input date" type="date" data-ch="d-date" value="${esc(d.date || "")}" aria-label="Date">
+          <input class="box-input time" type="time" data-ch="d-time" value="${esc(d.time || "")}" aria-label="Time (optional)">
+          <span class="meta12 de-count${n !== null && n >= 0 && n <= 7 ? " acc7" : ""}">${n === null ? "" : n < 0 ? "done" : whenText(n).toLowerCase()}</span>
+        </div>
+        <input class="ghost-input de-venue" data-in="d-venue" value="${esc(d.venue || "")}" placeholder="Venue (optional)" aria-label="Venue">
       </div>`;
   }).join("");
 }
@@ -2866,10 +2884,16 @@ INPUTS["d-label"] = t => { modDate(t).label = t.value; saveState(); };
 CHANGES["d-date"] = t => { modDate(t).date = t.value; saveState(); $("datesEdit").innerHTML = datesEditorHtml(currentModule()); paintModule(); };
 ACTIONS["d-remove"] = t => {
   const mod = currentModule(), d = modDate(t);
-  mod.dates = mod.dates.filter(x => x !== d);
+  const i = mod.dates.indexOf(d);
+  mod.dates.splice(i, 1);
   saveState();
   $("datesEdit").innerHTML = datesEditorHtml(mod);
   paintModule();
+  undoable(`Removed ${d.label || "the date"}.`, () => {
+    mod.dates.splice(Math.min(i, mod.dates.length), 0, d);
+    saveState();
+    if (ui.screen === "module" && currentModule() === mod) { $("datesEdit").innerHTML = datesEditorHtml(mod); paintModule(); } else render();
+  });
 };
 ACTIONS["add-date"] = () => {
   const mod = currentModule();
@@ -3083,26 +3107,20 @@ function sheetUp(e) {
 
 // ---- 9. Delete a module ----
 
+// Deleting a module happens straight away, with Undo; its saved PDF goes once Undo has gone
 ACTIONS["ask-delete"] = () => {
   const mod = currentModule();
+  const i = state.modules.indexOf(mod);
   const { code, title } = splitName(mod.name);
-  const layer = $("dlgLayer");
-  layer.innerHTML = `
-    <div class="dlg-back" data-act="dlg-cancel">
-      <div class="blueprint dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">
-        <div id="dlgTitle" class="h24">Delete ${esc(code || title)}?</div>
-        <div class="fs14 lh15 dim8">${esc(title)} and all its marks and key dates will be removed from this ${matchMedia("(pointer: coarse)").matches ? "phone" : "device"}. Make a Backup first (Settings) if you might need them.</div>
-        <div class="two-btns">
-          <button class="btn-line h48" data-act="dlg-cancel">Cancel</button>
-          <button class="btn-bad h48" data-act="dlg-delete">Delete module</button>
-        </div>
-      </div>
-    </div>`;
-  layer.hidden = false;
-  const dlg = layer.querySelector(".dlg");
-  dlg.addEventListener("click", e => { if (!e.target.closest("[data-act]")) e.stopPropagation(); });
-  dlg.animate([{ opacity: 0, transform: reduceMotion() ? "none" : "scale(0.96)" }, { opacity: 1, transform: "none" }], { duration: 200, easing: EASE_OUT });
-  layer.querySelector(".dlg-back").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" });
+  buzz();
+  state.modules.splice(i, 1);
+  saveState();
+  leaveModule();
+  undoable(`Deleted ${code || title}.`, () => {
+    state.modules.splice(Math.min(i, state.modules.length), 0, mod);
+    saveState();
+    render();
+  }, () => deleteFile(mod.id));
 };
 function closeDialog(after) {
   const layer = $("dlgLayer");
@@ -3114,16 +3132,6 @@ function closeDialog(after) {
   back.animate([{ opacity: 1 }, { opacity: 0 }], o).onfinish = done;
 }
 ACTIONS["dlg-cancel"] = () => closeDialog();
-ACTIONS["dlg-delete"] = () => {
-  const mod = currentModule();
-  buzz();
-  closeDialog(() => {
-    state.modules = state.modules.filter(m => m.id !== mod.id);
-    deleteFile(mod.id);
-    leaveModule();
-  });
-};
-
 // The glass header frosts only once something has scrolled under it
 const markScrolled = () => document.body.classList.toggle("scrolled", window.scrollY > 4);
 window.addEventListener("scroll", markScrolled, { passive: true });
@@ -3135,8 +3143,8 @@ function renderAiState() {
   $("aiState").classList.toggle("on", on);
 }
 
-// A short message at the bottom of the screen
-function showToast(text, ms = 6000) {
+// A short message at the bottom of the screen, optionally with a button (e.g. Undo)
+function showToast(text, ms = 6000, action = null) {
   let toast = $("toast");
   if (!toast) {
     toast = document.createElement("div");
@@ -3145,7 +3153,9 @@ function showToast(text, ms = 6000) {
     toast.setAttribute("role", "status");
     document.body.appendChild(toast);
   }
-  toast.textContent = text;
+  toast.innerHTML = `<span>${esc(text)}</span>${action ? `<button class="toast-btn">${esc(action.label)}</button>` : ""}`;
+  toast.classList.toggle("has-action", !!action);
+  if (action) toast.querySelector(".toast-btn").addEventListener("click", () => { toast.classList.remove("show"); action.run(); });
   toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove("show"), ms);
@@ -3342,16 +3352,25 @@ function calendarFile(mods) {
       if (!d.date || !d.label || daysUntil(d.date) < 0) continue;
       const a = assessmentFor(m, d.label);
       const about = a ? `${d.label} counts ${fmt(effectiveWeight(m, a), 1)}% of your final mark for ${m.name}.` : `${m.name}`;
+      // With a time: a 2-hour event at that time, and the reminder on the chosen day and hour
+      const hm = /^(\d{1,2}):(\d{2})$/.exec(String(d.time || ""));
+      const [y, mo, da] = d.date.split("-").map(Number);
+      const when = hm
+        ? [`DTSTART:${icsLocal(new Date(y, mo - 1, da, +hm[1], +hm[2]))}`, `DTEND:${icsLocal(new Date(y, mo - 1, da, +hm[1] + 2, +hm[2]))}`]
+        : [`DTSTART;VALUE=DATE:${d.date.replace(/-/g, "")}`, `DTEND;VALUE=DATE:${nextDay(d.date)}`];
+      const trigger = !rem.trigger ? null : hm
+        ? `TRIGGER;VALUE=DATE-TIME:${icsUtc(new Date(y, mo - 1, da - rem.days, rem.hour, 0))}`
+        : `TRIGGER:${rem.trigger}`;
       lines.push("BEGIN:VEVENT",
         `UID:${m.id}-${d.id}@markcalculator`,
         `DTSTAMP:${stamp}`,
-        `DTSTART;VALUE=DATE:${d.date.replace(/-/g, "")}`,
-        `DTEND;VALUE=DATE:${nextDay(d.date)}`,
+        ...when,
+        ...(String(d.venue || "").trim() ? [fold(`LOCATION:${text(d.venue.trim())}`)] : []),
         fold(`SUMMARY:${text(`${code || title}: ${d.label}`)}`),
         fold(`DESCRIPTION:${text(about)}`),
         `COLOR:${ICS_COLOURS[m.color] || "steelblue"}`,
-        "TRANSP:TRANSPARENT",
-        ...(rem.trigger ? ["BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:${rem.trigger}`, fold(`DESCRIPTION:${text(`${rem.text}: ${code || title} ${d.label}`)}`), "END:VALARM"] : []),
+        hm ? "TRANSP:OPAQUE" : "TRANSP:TRANSPARENT",
+        ...(trigger ? ["BEGIN:VALARM", "ACTION:DISPLAY", trigger, fold(`DESCRIPTION:${text(`${rem.text}: ${code || title} ${d.label}`)}`), "END:VALARM"] : []),
         "END:VEVENT");
       count++;
     }
@@ -3414,7 +3433,7 @@ async function shareLink(mod) {
     g: mod.groups.map(g => [g.name, Number(g.weight) || 0]),
     a: mod.assessments.map(a => [a.name, Number(a.weight) || 0, a.groupId ? gi(a.groupId) : -1, a.isFinal ? 1 : 0, Number(a.subMin) || 0]),
     r: mod.rules || [],
-    d: (mod.dates || []).filter(d => d.date && d.label).map(d => [d.date, d.label]),
+    d: (mod.dates || []).filter(d => d.date && d.label).map(d => (d.time || d.venue ? [d.date, d.label, d.time || "", d.venue || ""] : [d.date, d.label])),
   };
   const json = new TextEncoder().encode(JSON.stringify(data));
   let payload = "j" + toB64url(json);
@@ -3441,7 +3460,7 @@ async function readShared(payload) {
       id: uid(), name: String(name), weight: Number(weight) || 0, mark: "", isFinal: !!fin,
       groupId: groups[g] ? groups[g].id : null, subMin: Number(sub) > 0 ? Number(sub) : undefined,
     })),
-    notes: [], rules: (data.r || []).map(String), dates: (data.d || []).map(([date, label]) => ({ id: uid(), date: String(date), label: String(label) })),
+    notes: [], rules: (data.r || []).map(String), dates: (data.d || []).map(([date, label, time, venue]) => ({ id: uid(), date: String(date), label: String(label), ...(time ? { time: String(time) } : {}), ...(venue ? { venue: String(venue) } : {}) })),
   };
 }
 
@@ -3832,6 +3851,202 @@ function backupNudgeHtml() {
 ACTIONS["nudge-backup"] = () => { $("exportBtn").click(); render(); };
 ACTIONS["nudge-install"] = () => $("installDialog").showModal();
 ACTIONS["nudge-later"] = () => { state.nudgeUntil = Date.now() + 14 * 864e5; saveState(); render(); };
+
+// ---------- Undo instead of "Are you sure?" ----------
+// Deleting a module, folder or key date happens straight away, with "Undo" in a message for a few
+// seconds. Anything that can't be taken back (a saved PDF) is only removed once Undo has gone.
+
+let pendingUndo = null;
+function undoable(text, undo, commit) {
+  if (pendingUndo) pendingUndo.commit(); // an earlier delete can't be undone any more
+  const entry = { done: false, commit: () => { if (entry.done) return; entry.done = true; pendingUndo = null; if (commit) commit(); } };
+  pendingUndo = entry;
+  showToast(text, 6000, {
+    label: "Undo",
+    run: () => { if (entry.done) return; entry.done = true; pendingUndo = null; undo(); showToast("Restored.", 2000); },
+  });
+  clearTimeout(undoable.timer);
+  undoable.timer = setTimeout(() => entry.commit(), 6200);
+}
+// Leaving the app: whatever is waiting is final
+window.addEventListener("pagehide", () => { if (pendingUndo) pendingUndo.commit(); });
+
+// ---------- Key dates: time and venue ----------
+
+// "09:00 · Hall A"
+const dateExtra = d => [d.time, d.venue].map(s => String(s || "").trim()).filter(Boolean).join(" · ");
+
+INPUTS["d-venue"] = t => { modDate(t).venue = t.value; saveState(); };
+CHANGES["d-time"] = t => { modDate(t).time = t.value; saveState(); };
+
+// A local date and time in the calendar file's format
+const icsLocal = dt => `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}${String(dt.getMinutes()).padStart(2, "0")}00`;
+const icsUtc = dt => dt.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+
+// ---------- Notes per module ----------
+
+// The notes box grows with what's written (only once it's on screen and has its width)
+function fitMemo(t) {
+  if (!t.offsetWidth) return;
+  t.style.height = "auto";
+  t.style.height = t.scrollHeight + 2 + "px";
+}
+INPUTS.memo = t => {
+  const mod = currentModule();
+  if (!mod) return;
+  mod.memo = t.value;
+  fitMemo(t);
+  clearTimeout(INPUTS.memo.timer);
+  INPUTS.memo.timer = setTimeout(() => { saveState(); const s = $("memoSaved"); if (s) s.textContent = "Saved"; }, 400);
+};
+
+// ---------- Try with an example ----------
+
+function exampleModule() {
+  const t = new Date();
+  const day = k => { const d = new Date(t.getFullYear(), t.getMonth(), t.getDate() + k); return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
+  const used = new Set(state.modules.map(m => m.color));
+  return {
+    id: uid(), name: "BIO 112 Cell Biology", example: true, fileName: "", target: settings().defaultGoal, folderId: null, credits: 12,
+    color: MODULE_COLOURS.find(c => !used.has(c)) || "blue",
+    groups: [],
+    assessments: [
+      { id: uid(), name: "Class Test 1", weight: 15, mark: "64", isFinal: false, groupId: null },
+      { id: uid(), name: "Assignment 1", weight: 10, mark: "36/50", isFinal: false, groupId: null },
+      { id: uid(), name: "Class Test 2", weight: 15, mark: "", isFinal: false, groupId: null },
+      { id: uid(), name: "Practical Report", weight: 10, mark: "", isFinal: false, groupId: null },
+      { id: uid(), name: "A2 (Final test)", weight: 50, mark: "", isFinal: true, groupId: null, subMin: 40 },
+    ],
+    notes: [],
+    rules: ["Students need a sub-minimum of 40% in A2 to pass the module.", "A final mark of at least 50% is required to pass."],
+    dates: [
+      { id: uid(), label: "Class Test 2", date: day(5), time: "14:00", venue: "Room 1004" },
+      { id: uid(), label: "Practical Report", date: day(12) },
+      { id: uid(), label: "A2 (Final test)", date: day(30), time: "09:00", venue: "Hall A" },
+    ],
+    memo: "This is an example module. Tap Class Test 2 to enter a mark, or turn on What-if. Delete it with the bin at the top when you're done.",
+  };
+}
+ACTIONS["try-example"] = () => {
+  state.onboarded = true;
+  const mod = exampleModule();
+  state.modules.push(mod);
+  saveState();
+  openModule(mod.id, "modules");
+  showToast("An example module to try things out. Delete it whenever you like.", 4500);
+};
+
+// ---------- Year overview ----------
+// Your averages for the whole year or one folder (semester), credits passed, and what average you
+// still need on the work to come to reach a goal average (75% = cum laude at most universities).
+
+const PASS_MARK = 50;
+const YEAR_GOALS = [[60, "60"], [70, "70"], [75, "Cum laude 75"], [80, "80"]];
+
+function yearSummary(mods) {
+  const ps = mods.map(m => ({ m, p: plan(m) })).filter(x => x.p.rows.length);
+  const credited = ps.every(x => Number(x.m.credits) > 0);
+  const w = x => (credited ? Number(x.m.credits) : 1);
+  const W = ps.reduce((s, x) => s + w(x), 0);
+  const credits = { total: 0, passed: 0, failed: 0, coming: 0 };
+  for (const x of ps) {
+    const c = Number(x.m.credits) || 0;
+    credits.total += c;
+    if (x.p.need === null) { if (x.p.finalSoFar >= PASS_MARK) credits.passed += c; else credits.failed += c; }
+    else credits.coming += c;
+  }
+  const banked = ps.reduce((s, x) => s + w(x) * x.p.finalSoFar, 0);       // final marks so far, weighted
+  const rem = ps.reduce((s, x) => s + w(x) * x.p.remPct / 100, 0);         // share of the average still to come
+  // If every module keeps its own average on work done for the rest
+  const keepGoing = W ? ps.reduce((s, x) => s + w(x) * (x.p.finalSoFar + (x.p.average ?? 0) * x.p.remPct / 100), 0) / W : null;
+  return { ps, credited, W, banked, rem, credits, keepGoing, avg: averageOf(mods) };
+}
+
+function renderOverview(el) {
+  const scope = state.folders.some(f => f.id === state.overviewScope) ? state.overviewScope : "all";
+  const mods = scope === "all" ? state.modules : state.modules.filter(m => m.folderId === scope);
+  const goal = Number(state.yearGoal) || 75;
+  const y = yearSummary(mods);
+  const custom = !YEAR_GOALS.some(([g]) => g === goal);
+
+  // What average is still needed on the rest to reach the goal
+  let big = "–", text = "Add modules and marks to see this.", tone = "";
+  if (y.W) {
+    if (y.rem <= 1e-6) {
+      const fin = y.banked / y.W;
+      big = r1(fin) + "%"; text = fin >= goal ? `Your average is ${r1(fin)}%: ${fmt(goal)}% reached.` : `Your final average is ${r1(fin)}%, below ${fmt(goal)}%.`;
+      tone = fin >= goal ? "good" : "bad";
+    } else {
+      const need = (goal * y.W - y.banked) / y.rem;
+      if (need <= 0) { big = "0%"; text = `${fmt(goal)}% is already banked, whatever happens in the rest.`; tone = "good"; }
+      else if (need > 100) { big = Math.ceil(need) + "%"; text = `Out of reach. Full marks on everything still to come gives ${r1((y.banked + y.rem * 100) / y.W)}%.`; tone = "bad"; }
+      else { big = Math.ceil(need) + "%"; text = `average needed on all your work still to come for a ${fmt(goal)}% average`; }
+    }
+  }
+  const c = y.credits;
+  const pct = n => (c.total ? (n / c.total) * 100 : 0);
+
+  el.innerHTML = `
+    <div class="title-block">
+      <h1 class="h-screen">Overview</h1>
+      <div class="meta14">${scope === "all" ? "All your modules" : esc((state.folders.find(f => f.id === scope) || {}).name || "")}${y.credited ? " · weighted by credits" : y.ps.length ? " · add credits to each module to weight by credits" : ""}</div>
+    </div>
+    ${state.folders.length ? `
+    <div class="scope-pills" role="tablist">
+      <button class="chip${scope === "all" ? " on" : ""}" data-act="ov-scope" data-scope="all">All</button>
+      ${state.folders.map(f => `<button class="chip${scope === f.id ? " on" : ""}" data-act="ov-scope" data-scope="${f.id}">${esc(f.name || "Folder")}</button>`).join("")}
+    </div>` : ""}
+    ${!y.ps.length ? `
+    <div class="blueprint empty">
+      <div class="eyebrow">Nothing here yet</div>
+      <p>Your averages, credits and what you need for cum laude appear here once you have modules with marks.</p>
+    </div>` : `
+    <div class="blueprint stats2">
+      <div class="cell wide"><div class="eyebrow">Average on work done</div>
+        <div class="hero64" data-count="${y.avg.value ?? ""}">${y.avg.value == null ? "–" : r1(y.avg.value) + "%"}</div>
+        ${y.keepGoing != null ? `<div class="meta13">If you keep this up in every module: about ${r1(y.keepGoing)}% at the end.</div>` : ""}</div>
+      <div class="cell"><div class="eyebrow">Credits passed</div><div class="num26">${c.total ? `${fmt(c.passed)} of ${fmt(c.total)}` : "–"}</div>
+        <div class="meta12">${c.total ? `${fmt(c.coming)} still to come${c.failed ? ` · ${fmt(c.failed)} not passed` : ""}` : "Add credits on each module"}</div></div>
+      <div class="cell"><div class="eyebrow">Modules</div><div class="num26">${y.ps.length}</div>
+        <div class="meta12">${y.ps.filter(x => statusOf(x.m).bad).length} at risk</div></div>
+      ${c.total ? `<div class="cell wide-bottom"><span class="credit-bar" aria-hidden="true"><i class="passed" style="width:${pct(c.passed)}%"></i><i class="coming" style="width:${pct(c.coming)}%"></i><i class="failed" style="width:${pct(c.failed)}%"></i></span>
+        <span class="credit-legend"><span><i class="passed"></i>Passed</span><span><i class="coming"></i>Still to come</span>${c.failed ? `<span><i class="failed"></i>Not passed</span>` : ""}</span></div>` : ""}
+    </div>
+
+    <div class="goal-panel">
+      <div class="row-between">
+        <div class="eyebrow on-dark">Average I want</div>
+        <div class="goal-seg wrap">
+          ${YEAR_GOALS.map(([g, label]) => `<button class="${goal === g ? "on" : ""}" data-act="ov-goal" data-goal="${g}">${label}</button>`).join("")}
+          <input class="${custom ? "on" : ""}" type="number" inputmode="decimal" min="0" max="100" placeholder="Other" aria-label="Other goal average" data-ch="ov-goal-other" value="${custom ? esc(goal) : ""}">
+        </div>
+      </div>
+      <div class="need-row"><div class="hero64 ${tone}">${big}</div><div class="fs14 lh135">${esc(text)}</div></div>
+      <div class="sub-note">Cum laude usually needs a weighted average of 75% over your degree, and some universities have extra rules (for example no failed modules). Check your faculty's rules.</div>
+    </div>
+
+    <div class="ov-list">
+      <div class="row-between pb10"><h2 class="h22">Modules</h2><span class="meta12">Final mark so far</span></div>
+      ${y.ps.map(x => {
+        const { code, title } = splitName(x.m.name);
+        const st = statusOf(x.m);
+        return `
+        <button class="ov-row press" data-act="open-module" data-id="${x.m.id}">
+          <span class="ov-name">${swatch(x.m)}<span><b>${esc(code || title)}</b>${code ? ` <span class="meta12">${esc(title)}</span>` : ""}</span></span>
+          <span class="ov-mark">${r1(x.p.finalSoFar)}%</span>
+          <span class="meta12 ov-meta">${Number(x.m.credits) > 0 ? `${fmt(x.m.credits)} credits · ` : ""}<span class="${st.bad ? "bad-text" : ""}">${esc(st.text)}</span></span>
+        </button>`;
+      }).join("")}
+    </div>`}`;
+  if (ui.entering) introduce(el);
+}
+ACTIONS["ov-scope"] = t => { state.overviewScope = t.dataset.scope === "all" ? null : t.dataset.scope; saveState(); renderOverview($("scrOverview")); };
+ACTIONS["ov-goal"] = t => { state.yearGoal = Number(t.dataset.goal); saveState(); renderOverview($("scrOverview")); };
+CHANGES["ov-goal-other"] = t => {
+  const v = parseFloat(String(t.value).replace(",", "."));
+  if (v > 0 && v <= 100) { state.yearGoal = v; saveState(); }
+  renderOverview($("scrOverview"));
+};
 
 // ---------- Start ----------
 // The intro the first time; after that, the clean list with every folder closed

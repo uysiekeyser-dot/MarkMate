@@ -258,8 +258,8 @@ body:not(.scrolled) .screen-head, body:not(.scrolled) .top-row {
 /* The floating tab bar */
 .tabbar {
   position: fixed; bottom: calc(14px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 5;
-  width: min(330px, calc(100% - 40px)); max-width: 560px; height: 60px; min-height: 0; padding: 5px;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  width: min(380px, calc(100% - 32px)); max-width: 560px; height: 60px; min-height: 0; padding: 5px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 4px;
   background: var(--glass-strong); border: 0.5px solid var(--glass-edge); border-radius: 999px;
   box-shadow: var(--glass-shadow), 0 12px 30px rgba(20, 30, 70, 0.18);
 }
@@ -277,7 +277,7 @@ body:not(.scrolled) .screen-head, body:not(.scrolled) .top-row {
 
 /* Cards: translucent glass (no blur) */
 .blueprint, .folder, #moduleList > .mod-item, .assess, .dates-sec, .chart-sec, .date-group, .rv-table, .rules,
-.set-card, .admit-card, .nudge {
+.set-card, .admit-card, .nudge, .notes-sec, .ov-list {
   background: var(--glass); border: 0.5px solid var(--glass-edge); border-radius: var(--r-card); box-shadow: var(--glass-shadow);
 }
 .blueprint { position: relative; }
@@ -783,14 +783,52 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 .dates-sec { display: flex; flex-direction: column; gap: 6px; padding: 16px; }
 .dates-sec .row-between { flex-wrap: wrap; row-gap: 4px; }
 .de-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; grid-template-areas: "label date x" "count date x";
-  column-gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--color-hair);
+  display: grid; grid-template-columns: minmax(0, 1fr) 28px; grid-template-areas: "label x" "when when" "venue venue";
+  column-gap: 8px; row-gap: 4px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-hair);
 }
-.de-row .ghost-input { grid-area: label; height: 30px; }
-.de-row .box-input.date { grid-area: date; }
+.de-row .de-label { grid-area: label; height: 30px; }
 .de-row .x { grid-area: x; }
 .de-row.past { opacity: 0.55; }
-.de-count { grid-area: count; }
+.de-when { grid-area: when; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.box-input.time { height: 40px; width: auto; padding: 0 8px; font-size: 15px; }
+.de-count { margin-left: auto; }
+.de-row .de-venue { grid-area: venue; height: 30px; font-size: 14px; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.date-extra { display: block; }
+
+/* Notes per module */
+.notes-sec { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.memo {
+  width: 100%; min-height: 84px; resize: none; overflow: hidden; padding: 10px 12px; border-radius: 14px;
+  background: var(--color-surface, transparent); border: 0.5px solid var(--color-divider);
+  font: 16px/1.45 var(--font-body); color: var(--color-text);
+}
+.memo:focus { outline: none; border-color: var(--color-accent); }
+
+/* Year overview */
+.scope-pills { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
+.scope-pills::-webkit-scrollbar { display: none; }
+.scope-pills .chip { flex: none; font-size: 14px; padding: 7px 14px; background: var(--glass); border: 0.5px solid var(--glass-edge); }
+.scope-pills .chip.on { background: var(--color-accent); border-color: transparent; color: #fff; }
+.stats2 .cell.wide-bottom { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--color-divider); gap: 8px; }
+.credit-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--color-hair); }
+.credit-bar i, .credit-legend i { display: block; }
+:is(.credit-bar, .credit-legend) i.passed { background: var(--color-accent); }
+:is(.credit-bar, .credit-legend) i.coming { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+:is(.credit-bar, .credit-legend) i.failed { background: var(--bad); }
+.credit-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.credit-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.credit-legend i { width: 8px; height: 8px; border-radius: 999px; }
+.goal-seg.wrap { flex-wrap: wrap; }
+.ov-list { padding: 16px 16px 6px; }
+.ov-row {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name mark" "meta mark";
+  column-gap: 10px; row-gap: 2px; align-items: center; text-align: left; padding: 10px 6px; margin: 0 -6px; width: calc(100% + 12px);
+  border-top: 1px solid var(--color-hair); border-radius: 12px;
+}
+.ov-name { grid-area: name; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; }
+.ov-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-mark { grid-area: mark; font: 600 20px var(--font-heading); font-variant-numeric: tabular-nums; }
+.ov-meta { grid-area: meta; padding-left: 18px; }
 
 /* =========================================================================================
    Sheet, dialogs, toast, "Goal reached"
@@ -854,6 +892,10 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
   transition: opacity 200ms ease, transform 150ms var(--ease-out);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); transition-duration: 250ms, 300ms; }
+.toast.has-action { display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 20px; text-align: left; }
+.toast.has-action.show { pointer-events: auto; }
+.toast-btn { flex: none; padding: 8px 14px; border-radius: 999px; font: 600 14px var(--font-heading); color: #9ec2ff; background: rgba(255, 255, 255, 0.1); }
+.toast-btn:active { background: rgba(255, 255, 255, 0.2); }
 
 /* Goal reached */
 .celebrate { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; }
