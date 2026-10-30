@@ -1209,8 +1209,8 @@ const DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Saved with the modules (so Backup carries them), except the AI key and Light/Dark, which stay per device.
 
 // Change these with every update, so Settings → About shows which version the phone has
-const APP_VERSION = "25";
-const APP_UPDATED = "28 Oct 2026";
+const APP_VERSION = "26";
+const APP_UPDATED = "30 Oct 2026";
 
 const SETTING_DEFAULTS = { defaultGoal: 50, risk: 70, decimals: 1, reminder: "day9", calm: false, haptics: true, accent: "blue", glass: "full" };
 const settings = () => ({ ...SETTING_DEFAULTS, ...(state.settings || {}) });

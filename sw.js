@@ -8,7 +8,7 @@
  *
  * Change CACHE when the list below changes, so old copies are cleared out.
  */
-const CACHE = "mark-calculator-v13";
+const CACHE = "mark-calculator-v14";
 
 const SITE_FILES = [
   "./",

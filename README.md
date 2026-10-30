@@ -55,7 +55,7 @@ On iPhone the installed app keeps its own copy of your data, separate from Safar
 | `app.js` | Reads the frameworks, does the calculations, saves the marks |
 | `manifest.webmanifest` | Makes the site installable as a phone app (name, icon, colours) |
 | `sw.js` | Lets the app open without internet |
-| `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` | The app icons |
+| `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` | The app icons: one white symbol on a plain blue tile, so it also looks good in iPhone's Dark, Clear and Tinted Home Screen styles |
 | `sample-framework.txt` | An example framework to try the site with |
 
 ## Putting it on GitHub Pages
